@@ -92,6 +92,13 @@ historical reference run.
 
 ### Generate, review, test, repair, and evaluate
 
+Generation first performs structured, domain-agnostic discovery and saves it
+to `./target-site/.webmcpify/discovery.json`. Run discovery independently with:
+
+```bash
+node dist/cli.js discover --path ./target-site
+```
+
 Generation is a draft-only, read-only step. It proposes both WebMCP changes
 and a project-local task list. Choose `auto`, `declarative`, or `imperative`:
 

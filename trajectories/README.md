@@ -15,7 +15,7 @@ The normal evidence flow is:
 
 ```text
 generate
-   │  discovery + proposed diff + task definitions
+   │  structured discovery + proposed diff + task definitions
    ▼
    review-decision ──► approved-tools.json + tasks.json + approved patch
         │
@@ -48,6 +48,7 @@ The agent's report and the independent evaluator are deliberately separate:
 | Role | Payload and purpose | Main links |
 | --- | --- | --- |
 | `generate-*.json` | Read-only provider output: discovery findings, proposed WebMCP diff, placement/wiring notes, and a 5–6 task proposal. | `generate-*.meta.json` |
+| `discovery-*.json` | Structured static discovery snapshot for one target project. | `discoveryPath`, `sitePath` |
 | `review-decision-*.json` | Human approval or rejection, selected tools, edited task definitions, and paths to the draft and project approval files. | `draftPath`, `approvalPath`, `tasksPath` |
 | `patch-*.json` | Extracted unified source diff, changed files, source fingerprint, and patch status. | `sourceTrajectory`, `patchPath` |
 | `apply-*.json` | Patch application, rollback, and build/typecheck result. | `runId`, `patchPath` |
@@ -173,3 +174,11 @@ fit the columns belong in the sidecar. A row has this shape:
 
 | Recorded | Role | Status | Provider | Task | Raw/artifact | Metadata |
 | --- | --- | --- | --- | --- | --- | --- |
+| — | discovery | completed | — | — | [discovery-2026-08-31T13-56-22-930Z-9f7ddf4f.json](./discovery-2026-08-31T13-56-22-930Z-9f7ddf4f.json) | [metadata](./discovery-2026-08-31T13-56-22-930Z-9f7ddf4f.meta.json) |
+| — | discovery | completed | — | — | [discovery-2026-08-31T13-56-24-860Z-1b9ffa0a.json](./discovery-2026-08-31T13-56-24-860Z-1b9ffa0a.json) | [metadata](./discovery-2026-08-31T13-56-24-860Z-1b9ffa0a.meta.json) |
+| — | discovery | completed | — | — | [discovery-2026-08-31T13-59-05-435Z-67f08465.json](./discovery-2026-08-31T13-59-05-435Z-67f08465.json) | [metadata](./discovery-2026-08-31T13-59-05-435Z-67f08465.meta.json) |
+| — | discovery | completed | — | — | [discovery-2026-08-31T13-59-07-761Z-b985372f.json](./discovery-2026-08-31T13-59-07-761Z-b985372f.json) | [metadata](./discovery-2026-08-31T13-59-07-761Z-b985372f.meta.json) |
+| — | discovery | completed | — | — | [discovery-2026-08-31T14-00-43-449Z-456979ec.json](./discovery-2026-08-31T14-00-43-449Z-456979ec.json) | [metadata](./discovery-2026-08-31T14-00-43-449Z-456979ec.meta.json) |
+| — | discovery | completed | — | — | [discovery-2026-08-31T14-00-45-511Z-4ef63fc3.json](./discovery-2026-08-31T14-00-45-511Z-4ef63fc3.json) | [metadata](./discovery-2026-08-31T14-00-45-511Z-4ef63fc3.meta.json) |
+| 2026-08-31T14:01:37.730Z | discovery | completed | — | — | [discovery-2026-08-31T14-01-37-730Z-b6f6e587.json](./discovery-2026-08-31T14-01-37-730Z-b6f6e587.json) | [metadata](./discovery-2026-08-31T14-01-37-730Z-b6f6e587.meta.json) |
+| 2026-08-31T14:01:39.832Z | discovery | completed | — | — | [discovery-2026-08-31T14-01-39-832Z-b4925d17.json](./discovery-2026-08-31T14-01-39-832Z-b4925d17.json) | [metadata](./discovery-2026-08-31T14-01-39-832Z-b4925d17.meta.json) |

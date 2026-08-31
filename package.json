@@ -16,6 +16,7 @@
     "eval": "node dist/cli.js eval",
     "baseline": "node dist/cli.js baseline",
     "verify:patch": "node scripts/verify-patch-lifecycle.mjs",
+    "verify:discovery": "node scripts/verify-discovery.mjs",
     "temporal:worker": "node dist/temporal/worker.js",
     "dev": "tsx watch src/cli.ts",
     "test": "echo \"Error: no test specified\" && exit 1"

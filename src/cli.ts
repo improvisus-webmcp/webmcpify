@@ -9,6 +9,7 @@ import { runEval } from "./commands/eval.js";
 import { runBaseline } from "./commands/baseline.js";
 import { runInit } from "./commands/init.js";
 import { runApply } from "./commands/apply.js";
+import { runDiscover } from "./commands/discover.js";
 
 const providerHelp =
   "AI provider to use: gemini, antigravity, claude, or codex";
@@ -46,6 +47,15 @@ program
     "auto"
   )
   .action(runGenerate);
+
+program
+  .command("discover")
+  .description("Discover a target project's stack, routes, actions, and capabilities")
+  .option(
+    "-p, --path <dir>",
+    "path to the site's codebase (defaults to the current directory)"
+  )
+  .action(runDiscover);
 
 program
   .command("review")

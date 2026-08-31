@@ -4,6 +4,22 @@ All notable changes to WebMCPify are documented here.
 
 ## [Unreleased]
 
+### Added: structured project discovery
+
+Added a domain-agnostic discovery module and `webmcpify discover` command.
+Discovery scans project metadata and focused source files for the stack,
+package manager, routes, UI actions, APIs/handlers, authentication and state
+signals, existing WebMCP, and project capabilities. Results are persisted to
+`.webmcpify/discovery.json` and recorded as `discovery-*` trajectory artifacts.
+
+Generation now runs discovery first and supplies the saved structured result to
+the generation agent, making discovery reusable rather than prompt-only.
+
+Verification ran against local checkouts of `webmcp-coffee-store` and
+`commerce`; both produced valid JSON with useful project signals. `pnpm
+tsc --noEmit` and `pnpm build` pass, and the focused discovery verification
+script passes for both projects.
+
 ### Added: approved source-diff application pipeline
 
 Generation now extracts and validates the provider's real unified diff into

@@ -10,6 +10,7 @@ import {
 import { createTrajectoryPath } from "../lib/trajectories.js";
 import { createPendingPatch } from "../lib/patches.js";
 import { readFile } from "node:fs/promises";
+import { discoveryPath, runDiscovery } from "../lib/discovery.js";
 
 export const GENERATE_ONLY_PROMPT = `
 ${DISCOVERY_GUIDANCE}
@@ -78,6 +79,8 @@ export async function runGenerate(opts: GenerateOptions) {
     throw new Error(`Site path does not exist: ${sitePath}`);
   }
 
+  const discovery = await runDiscovery(sitePath);
+
   const saveTo = createTrajectoryPath("generate");
   const strategy = methodInstruction(method);
   const failureContext = opts.context
@@ -85,7 +88,7 @@ export async function runGenerate(opts: GenerateOptions) {
 drafted repair, but still inspect the code rather than assuming the diagnosis:
 ${opts.context}`
     : "";
-  const prompt = [GENERATE_ONLY_PROMPT, strategy, failureContext]
+  const prompt = [GENERATE_ONLY_PROMPT, `The structured discovery has been completed and saved at ${discoveryPath(sitePath)}. Use this data as the source of truth and do not invent actions:\n${JSON.stringify(discovery, null, 2)}`, strategy, failureContext]
     .filter(Boolean)
     .join("\n\n");
 
@@ -106,6 +109,7 @@ ${opts.context}`
       sitePath,
       method,
       context: opts.context,
+      discoveryPath: discoveryPath(sitePath),
       ...opts.trajectoryMetadata,
     },
   });
