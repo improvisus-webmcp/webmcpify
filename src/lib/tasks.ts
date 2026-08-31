@@ -131,18 +131,37 @@ function taskArray(value: unknown): Task[] | undefined {
 
 /** Extract a 5-6 task proposal from an agent's draft without executing it. */
 export function extractTasksFromText(text: string): Task[] | undefined {
-  const candidates: string[] = [text.trim()];
-  for (const match of text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
-    if (match[1]) candidates.push(match[1].trim());
+  const candidates: string[] = [];
+  for (const match of text.matchAll(/```(?:[^\n]*\n)?([\s\S]*?)```/gi)) {
+    if (match[1]) {
+      const trimmed = match[1].trim();
+      candidates.push(trimmed);
+      const arrStart = trimmed.indexOf("[");
+      const arrEnd = trimmed.lastIndexOf("]");
+      if (arrStart >= 0 && arrEnd > arrStart) {
+        candidates.push(trimmed.slice(arrStart, arrEnd + 1));
+      }
+    }
   }
-
+  for (const match of text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    if (match[1]) {
+      const trimmed = match[1].trim();
+      candidates.push(trimmed);
+      const arrStart = trimmed.indexOf("[");
+      const arrEnd = trimmed.lastIndexOf("]");
+      if (arrStart >= 0 && arrEnd > arrStart) {
+        candidates.push(trimmed.slice(arrStart, arrEnd + 1));
+      }
+    }
+  }
+  candidates.push(text.trim());
   const firstArray = text.indexOf("[");
   const lastArray = text.lastIndexOf("]");
   if (firstArray >= 0 && lastArray > firstArray) {
     candidates.push(text.slice(firstArray, lastArray + 1));
   }
 
-  for (const candidate of candidates) {
+  for (const candidate of [...new Set(candidates)]) {
     try {
       const parsed = JSON.parse(candidate) as unknown;
       const tasks = taskArray(parsed);

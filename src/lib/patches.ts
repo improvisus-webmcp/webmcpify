@@ -66,14 +66,86 @@ function textFromProviderOutput(raw: string): string {
   return raw;
 }
 
+function fixHunkHeaders(patch: string): string {
+  const lines = patch.split("\n");
+  const out: string[] = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    if (line.startsWith("@@ ")) {
+      const headerMatch = line.match(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@(.*)$/);
+      if (headerMatch) {
+        const startOld = parseInt(headerMatch[1], 10);
+        const startNew = parseInt(headerMatch[2], 10);
+        const rest = headerMatch[3] || "";
+        const hunkLines: string[] = [];
+        i++;
+        while (i < lines.length && !lines[i].startsWith("@@ ") && !lines[i].startsWith("diff --git ")) {
+          let hLine = lines[i];
+          if (hLine === "" && i + 1 < lines.length && !lines[i + 1].startsWith("diff --git ") && !lines[i + 1].startsWith("@@ ")) {
+            hLine = " ";
+          } else if (!hLine.startsWith("+") && !hLine.startsWith("-") && !hLine.startsWith(" ") && !hLine.startsWith("\\") && hLine !== "") {
+            hLine = " " + hLine;
+          }
+          hunkLines.push(hLine);
+          i++;
+        }
+        let oldCount = 0;
+        let newCount = 0;
+        for (const hl of hunkLines) {
+          if (hl.startsWith("-")) oldCount++;
+          else if (hl.startsWith("+")) newCount++;
+          else if (hl.startsWith(" ")) {
+            oldCount++;
+            newCount++;
+          }
+        }
+        out.push(`@@ -${startOld},${oldCount} +${startNew},${newCount} @@${rest}`);
+        out.push(...hunkLines);
+        continue;
+      }
+    }
+    out.push(line);
+    i++;
+  }
+  return out.join("\n");
+}
+
+function normalizeUnifiedDiff(patch: string): string {
+  let normalized = patch.trim();
+  const chunks = normalized.split(/\n(?=diff --git )/);
+  const resultChunks: string[] = [];
+  for (const chunk of chunks) {
+    if (chunk.startsWith("diff --git ")) {
+      resultChunks.push(chunk);
+    } else {
+      const withGitDiff = chunk.replace(/(?:^|\n)(--- (?:a\/)?(\S+)\s*\n\+\+\+ (?:b\/)?(\S+))/g, (_m, p1, p2, p3) => {
+        return `\ndiff --git a/${p2} b/${p3}\n${p1}`;
+      }).trim();
+      resultChunks.push(withGitDiff);
+    }
+  }
+  const joined = resultChunks.join("\n").trim();
+  return fixHunkHeaders(joined);
+}
+
 function candidatePatches(text: string): string[] {
   const candidates: string[] = [];
   for (const match of text.matchAll(/```(?:diff|patch)?\s*([\s\S]*?)```/gi)) {
-    if (match[1]?.includes("diff --git ")) candidates.push(match[1].trim());
+    if (match[1]?.includes("diff --git ") || match[1]?.includes("--- a/") || match[1]?.includes("--- ")) {
+      candidates.push(normalizeUnifiedDiff(match[1]));
+    }
   }
-  const firstDiff = text.indexOf("diff --git ");
-  if (firstDiff >= 0) candidates.push(text.slice(firstDiff).trim());
-  return candidates;
+  for (const match of text.matchAll(/```(?:[^\n]*\n)?([\s\S]*?)```/gi)) {
+    if (match[1]?.includes("diff --git ") || match[1]?.includes("--- a/") || match[1]?.includes("--- ")) {
+      candidates.push(normalizeUnifiedDiff(match[1]));
+    }
+  }
+  const firstGitDiff = text.indexOf("diff --git ");
+  if (firstGitDiff >= 0) candidates.push(normalizeUnifiedDiff(text.slice(firstGitDiff)));
+  const firstDiff = text.indexOf("--- a/");
+  if (firstDiff >= 0) candidates.push(normalizeUnifiedDiff(text.slice(firstDiff)));
+  return [...new Set(candidates.filter(Boolean))];
 }
 
 function changedFiles(patch: string): string[] {
@@ -81,6 +153,12 @@ function changedFiles(patch: string): string[] {
   for (const match of patch.matchAll(/^diff --git a\/(\S+) b\/(\S+)$/gm)) {
     files.add(match[1]);
     files.add(match[2]);
+  }
+  for (const match of patch.matchAll(/^--- (?:a\/)?(\S+)\s*$/gm)) {
+    if (match[1] !== "/dev/null") files.add(match[1]);
+  }
+  for (const match of patch.matchAll(/^\+\+\+ (?:b\/)?(\S+)\s*$/gm)) {
+    if (match[1] !== "/dev/null") files.add(match[1]);
   }
   return [...files];
 }

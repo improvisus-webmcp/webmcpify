@@ -45,7 +45,33 @@ function textFromOutput(raw: string): string {
 
 function jsonCandidates(text: string): string[] {
   const candidates: string[] = [];
-  for (const match of text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) if (match[1]) candidates.push(match[1].trim());
+  for (const match of text.matchAll(/```(?:[^\n]*\n)?([\s\S]*?)```/gi)) {
+    if (match[1]) {
+      const trimmed = match[1].trim();
+      candidates.push(trimmed);
+      const objStart = trimmed.indexOf("{");
+      const objEnd = trimmed.lastIndexOf("}");
+      if (objStart >= 0 && objEnd > objStart) {
+        candidates.push(trimmed.slice(objStart, objEnd + 1));
+      }
+      const arrStart = trimmed.indexOf("[");
+      const arrEnd = trimmed.lastIndexOf("]");
+      if (arrStart >= 0 && arrEnd > arrStart) {
+        candidates.push(trimmed.slice(arrStart, arrEnd + 1));
+      }
+    }
+  }
+  for (const match of text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+    if (match[1]) {
+      const trimmed = match[1].trim();
+      candidates.push(trimmed);
+      const objStart = trimmed.indexOf("{");
+      const objEnd = trimmed.lastIndexOf("}");
+      if (objStart >= 0 && objEnd > objStart) {
+        candidates.push(trimmed.slice(objStart, objEnd + 1));
+      }
+    }
+  }
   candidates.push(text.trim());
   const objectStart = text.indexOf("{");
   const objectEnd = text.lastIndexOf("}");
@@ -120,14 +146,19 @@ export function validateProposedTools(value: unknown, discovery: DiscoveryResult
 export function extractAndValidateProposedTools(raw: string, discovery: DiscoveryResult): ProposedTool[] {
   const text = textFromOutput(raw);
   const candidates = [raw, text, ...jsonCandidates(text)];
+  let lastError: unknown;
   for (const candidate of [...new Set(candidates)]) {
     try {
       const parsed = JSON.parse(candidate) as unknown;
       return validateProposedTools(proposalValue(parsed), discovery);
     } catch (error) {
       if (error instanceof SyntaxError) continue;
-      throw error;
+      lastError = error;
+      continue;
     }
+  }
+  if (lastError instanceof Error && !lastError.message.includes("is not valid JSON") && !lastError.message.includes("Unexpected token")) {
+    throw lastError;
   }
   throw new Error("Provider output did not contain a valid structured tool proposal.");
 }
