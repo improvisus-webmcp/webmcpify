@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+.DS_Store
+
+# Local configuration and approval state.
+.webmcpify/*
+!.webmcpify/.gitkeep
+
+# Local environment files.
+.env
+.env.*
+!.env.example

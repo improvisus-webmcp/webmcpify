@@ -1,0 +1,49 @@
+{
+  "name": "webmcpify",
+  "version": "1.0.0",
+  "description": "A CLI that audits and generates WebMCP tool registrations for a website, verified by an isolated agent driving a real browser, with human approval required before any tool goes live",
+  "main": "dist/cli.js",
+  "type": "module",
+  "bin": {
+    "webmcpify": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "generate": "node dist/cli.js generate",
+    "review": "node dist/cli.js review",
+    "test:audit": "node dist/cli.js test",
+    "repair": "node dist/cli.js repair",
+    "eval": "node dist/cli.js eval",
+    "baseline": "node dist/cli.js baseline",
+    "dev": "tsx watch src/cli.ts",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "webmcp",
+    "mcp",
+    "model-context-protocol",
+    "agentic",
+    "ai-agents",
+    "browser-automation",
+    "hackathon"
+  ],
+  "author": "Abeeb Ridwan Olumide",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/<your-username>/webmcpify.git"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "commander": "^12.1.0",
+    "express": "^4.22.2"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.25",
+    "@types/node": "^20.19.43",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.3"
+  }
+}
