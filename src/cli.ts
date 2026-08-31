@@ -25,11 +25,20 @@ program
   .description("Draft WebMCP tool registrations for a site (no changes applied yet)")
   .requiredOption("-p, --path <dir>", "path to the site's codebase")
   .option("--provider <name>", providerHelp, "gemini")
+  .option(
+    "--method <type>",
+    "generation strategy: declarative, imperative, or auto",
+    "auto"
+  )
   .action(runGenerate);
 
 program
   .command("review")
   .description("Start the local approval UI for drafted tools")
+  .option(
+    "-p, --path <dir>",
+    "path to the site's codebase (defaults to the current directory)"
+  )
   .option("--port <number>", "port for the review server", "4173")
   .action(runReview);
 
@@ -37,19 +46,31 @@ program
   .command("test")
   .description("Run an isolated agent against approved tools via chrome-devtools-mcp")
   .requiredOption("-u, --url <url>", "URL of the running site")
+  .option(
+    "-p, --path <dir>",
+    "path to the site's codebase (defaults to the current directory)"
+  )
   .option("--provider <name>", providerHelp, "gemini")
-  .action(runTest);
+  .action(async (opts) => {
+    await runTest(opts);
+  });
 
 program
   .command("repair")
   .description("Patch a failed tool based on the last test run's failure")
+  .option(
+    "-p, --path <dir>",
+    "path to the site's codebase (defaults to the current directory)"
+  )
   .option("--provider <name>", providerHelp, "gemini")
   .action(runRepair);
 
 program
   .command("eval")
   .description("Print the pass/fail report for the last test run")
-  .action(runEval);
+  .action(async () => {
+    await runEval();
+  });
 
 program
   .command("baseline")

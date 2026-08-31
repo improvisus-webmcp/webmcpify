@@ -12,6 +12,12 @@ All notable changes to WebMCPify are documented here.
 - Executable discovery through `PATH`, Codex VS Code extension installs, and optional `.env` overrides.
 - `.env.example` for local provider and Chrome path configuration without committing machine-specific settings.
 - Optional MCP configuration bridging for providers that support it.
+- Generation strategy selection (`declarative`, `imperative`, or `auto`) with
+  drafts captured in `trajectories/generate.json`.
+- A local review UI that records the human-approved tool manifest before an
+  isolated test run.
+- Isolated test, repair, and evaluation commands with separate raw agent and
+  independently scored evaluation artifacts.
 
 ### Changed
 
@@ -19,6 +25,9 @@ All notable changes to WebMCPify are documented here.
 - Missing optional MCP configuration is skipped instead of failing the baseline.
 - Baseline trajectories are saved in WebMCPify's tracked `trajectories/` directory regardless of the directory from which the command is launched.
 - CLI failures now print a concise error instead of an uncaught stack trace.
+- Test runs create a project-local Chrome DevTools MCP configuration only when
+  the site does not already provide one; existing `.mcp.json` files are left
+  untouched.
 
 ### Architectural note
 
