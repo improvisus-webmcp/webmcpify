@@ -129,7 +129,7 @@ export async function runReviewPrompt(
 <p>Approve only tools you have inspected. Approval writes a local manifest; it does not deploy source changes.</p>
 <h2>Draft</h2><pre>${htmlEscape(draft)}</pre>
 <form method="post" action="/approve"><h2>Approved tools</h2>${checkboxes}
-<p>Additional or corrected names, one per line:</p><textarea name="additionalTools" placeholder="add_to_cart\ncheckout"></textarea>
+<p>Additional or corrected names, one per line:</p><textarea name="additionalTools" placeholder="search_items\nsubmit_form"></textarea>
 <br><button type="submit">Save approval</button><button class="reject" type="submit" formaction="/reject">Reject draft</button></form></body></html>`);
   });
 

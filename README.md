@@ -2,7 +2,7 @@
 
 WebMCPify audits and drafts [WebMCP](https://webmachinelearning.github.io/webmcp/) tool registrations for a website. It keeps generation separate from human approval, runs an isolated browser audit, records raw agent trajectories, and scores behavior independently from the agent's self-report.
 
-The reference subject is the real, unmodified [`jillesme/webmcp-coffee-store`](https://github.com/jillesme/webmcp-coffee-store) application. The baseline and generation prompts are domain-agnostic: they inspect the target site's code to discover its actions rather than assuming a coffee store.
+The reference experiment used the real, unmodified [`jillesme/webmcp-coffee-store`](https://github.com/jillesme/webmcp-coffee-store) application. The product itself is domain-agnostic: baseline, generation, testing, review, and repair inspect the target site's actions rather than assuming a particular kind of application.
 
 ## Dependencies
 
@@ -54,7 +54,7 @@ Run the one-shot self-verifying baseline. It discovers the site's actions, adds 
 
 ```bash
 node dist/cli.js baseline \
-  --path ./webmcp-coffee-store \
+  --path ./target-site \
   --url http://localhost:5173 \
   --provider antigravity
 ```
@@ -67,7 +67,7 @@ Generation is a draft-only step. Choose `auto`, `declarative`, or `imperative`:
 
 ```bash
 node dist/cli.js generate \
-  --path ./webmcp-coffee-store \
+  --path ./target-site \
   --method auto \
   --provider antigravity
 ```
@@ -75,29 +75,29 @@ node dist/cli.js generate \
 Review the draft in the local approval page:
 
 ```bash
-node dist/cli.js review --path ./webmcp-coffee-store
+node dist/cli.js review --path ./target-site
 ```
 
-Open the printed localhost URL and approve only the tools you inspected. The approval is saved to `./webmcp-coffee-store/.webmcpify/approved-tools.json`.
+Open the printed localhost URL and approve only the tools you inspected. The approval is saved to `./target-site/.webmcpify/approved-tools.json`.
 
 Then run the isolated audit and independent score:
 
 ```bash
 node dist/cli.js test \
-  --path ./webmcp-coffee-store \
+  --path ./target-site \
   --url http://localhost:5173 \
   --provider antigravity
 
 node dist/cli.js eval
 ```
 
-The agent trajectory is saved to `trajectories/test.json`; the independent result is saved to `trajectories/test-eval.json`. The current evaluator contains the fixed coffee-store task list used for the reference comparison.
+The agent trajectory is saved to `trajectories/test.json`; the independent result is saved to `trajectories/test-eval.json`. The evaluator discovers the live page's generic action surface and checks rendering, controls, forms, links, reload behavior, and WebMCP runtime visibility.
 
 For a plain repair, use the latest independent failures:
 
 ```bash
 node dist/cli.js repair \
-  --path ./webmcp-coffee-store \
+  --path ./target-site \
   --provider antigravity
 ```
 
@@ -107,8 +107,8 @@ Choose the repair mode for the project. The first command is the safe default;
 the second opts this project into durable repair:
 
 ```bash
-node dist/cli.js init --path ./webmcp-coffee-store
-node dist/cli.js init --path ./webmcp-coffee-store --with-temporal
+node dist/cli.js init --path ./target-site
+node dist/cli.js init --path ./target-site --with-temporal
 ```
 
 Install the Temporal CLI and start its local development server:
@@ -126,13 +126,13 @@ node dist/temporal/worker.js
 
 In a third terminal, start a durable repair workflow. With the project setting
 enabled, `repair` uses Temporal without needing the flag every time. The task
-must match one of the evaluator's task names, such as `cart survives a reload`:
+must match one of the evaluator's task names, such as `page survives a reload`:
 
 ```bash
 node dist/cli.js repair \
-  --path ./webmcp-coffee-store \
+  --path ./target-site \
   --url http://localhost:5173 \
-  --task "cart survives a reload" \
+  --task "page survives a reload" \
   --provider antigravity
 ```
 

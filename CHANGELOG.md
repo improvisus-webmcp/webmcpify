@@ -20,6 +20,8 @@ All notable changes to WebMCPify are documented here.
   independently scored evaluation artifacts.
 - Baseline and generation prompts now infer the site's actions from its
   codebase instead of assuming a coffee-store domain.
+- The independent evaluator now discovers generic page actions and structural
+  WebMCP surface checks instead of using coffee-store selectors or state keys.
 
 ### Changed
 

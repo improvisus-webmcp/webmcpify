@@ -56,16 +56,16 @@ export async function runTest(opts: TestOptions): Promise<StoredTestEvaluation> 
 
   const prompt = `Run an isolated WebMCP audit against the already-running site at
 ${opts.url}. Do not edit the site's files. Use the chrome-devtools MCP tools to
-inspect the live page, list the available WebMCP tools, and exercise the
-approved tools through their real tool interface.
+inspect the live page, infer its core user-facing actions, list the available
+WebMCP tools, and exercise the approved tools through their real tool
+interface.
 
-Test these behaviors where the corresponding approved tool exists:
-1. the catalog renders;
-2. filtering by medium roast leaves the expected products visible;
-3. adding Fazenda Mio updates the cart;
-4. increasing its quantity updates the cart;
-5. the cart survives a reload;
-6. login state persists and checkout is available only when logged in.
+For every discovered tool, report its name, input used, execution result, and
+any state-dependent registration or unregistration. Also check the site's
+important UI flows, such as search, filtering, navigation, form submission,
+adding or removing items, authentication, or checkout when those actions are
+actually present. Do not assume a domain or invent actions that the site does
+not expose.
 
 ${approvalContext}
 

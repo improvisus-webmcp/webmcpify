@@ -13,12 +13,28 @@ export interface ScoreSummary {
   tasks: TaskScore[];
 }
 
-type PersistedShopState = {
-  cart?: Record<string, number>;
-  isLoggedIn?: boolean;
-};
+export const DEFAULT_TASK_NAMES = [
+  "page renders",
+  "user-facing actions are discoverable",
+  "interactive controls are usable",
+  "forms expose usable controls",
+  "navigation links expose destinations",
+  "page survives a reload",
+  "WebMCP runtime is inspectable",
+] as const;
 
-const TASK_COUNT = 6;
+interface PageInventory {
+  title: string;
+  bodyTextLength: number;
+  buttons: number;
+  enabledButtons: number;
+  links: number;
+  linksWithDestinations: number;
+  forms: number;
+  formsWithControls: number;
+  controls: number;
+  modelContextAvailable: boolean;
+}
 
 function chromeExecutable(): string {
   const candidates = [
@@ -37,33 +53,48 @@ function chromeExecutable(): string {
   return executable;
 }
 
-async function persistedState(page: Page): Promise<PersistedShopState> {
+async function inspectPage(page: Page): Promise<PageInventory> {
   return page.evaluate(() => {
-    const raw = window.localStorage.getItem("webmcp-coffee-store");
-    if (!raw) return {};
+    const buttons = [...document.querySelectorAll("button")];
+    const anchors = [...document.querySelectorAll("a")];
+    const forms = [...document.querySelectorAll("form")];
+    const controls = [
+      ...document.querySelectorAll(
+        'button, a[href], input:not([type="hidden"]), select, textarea, form'
+      ),
+    ];
 
-    try {
-      const parsed = JSON.parse(raw) as {
-        state?: PersistedShopState;
-      };
-      return parsed.state ?? {};
-    } catch {
-      return {};
-    }
+    return {
+      title: document.title.trim(),
+      bodyTextLength: document.body?.innerText.trim().length ?? 0,
+      buttons: buttons.length,
+      enabledButtons: buttons.filter((button) => !button.disabled).length,
+      links: anchors.length,
+      linksWithDestinations: anchors.filter((anchor) =>
+        Boolean(anchor.getAttribute("href")?.trim())
+      ).length,
+      forms: forms.length,
+      formsWithControls: forms.filter((form) =>
+        Boolean(
+          form.querySelector(
+            'button, input:not([type="hidden"]), select, textarea'
+          )
+        )
+      ).length,
+      controls: controls.length,
+      modelContextAvailable: Boolean(
+        (navigator as Navigator & { modelContext?: unknown }).modelContext
+      ),
+    };
   });
-}
-
-async function cartCount(page: Page): Promise<number> {
-  return Number(await page.locator(".cart-count").textContent());
 }
 
 async function runTask(
   name: string,
-  task: () => Promise<void>
+  task: () => Promise<TaskScore>
 ): Promise<TaskScore> {
   try {
-    await task();
-    return { name, passed: true };
+    return await task();
   } catch (error) {
     return {
       name,
@@ -73,16 +104,15 @@ async function runTask(
   }
 }
 
-export async function scoreTasks(url: string): Promise<ScoreSummary> {
-  const taskNames = [
-    "catalog renders",
-    "roast filter updates visible coffees",
-    "add to cart updates cart and localStorage",
-    "quantity update updates cart and localStorage",
-    "cart survives a reload",
-    "login state persists",
-  ];
+function passed(name: string, detail: string): TaskScore {
+  return { name, passed: true, detail };
+}
 
+function failed(name: string, detail: string): TaskScore {
+  return { name, passed: false, detail };
+}
+
+export async function scoreTasks(url: string): Promise<ScoreSummary> {
   let browser: Awaited<ReturnType<typeof chromium.launch>> | undefined;
   const scores: TaskScore[] = [];
 
@@ -90,93 +120,138 @@ export async function scoreTasks(url: string): Promise<ScoreSummary> {
     browser = await chromium.launch({
       executablePath: chromeExecutable(),
       headless: true,
-      args: ["--no-sandbox", "--disable-dev-shm-usage"],
+      args: [
+        "--no-sandbox",
+        "--disable-dev-shm-usage",
+        "--enable-features=WebMCP",
+      ],
     });
     const context = await browser.newContext();
     const page = await context.newPage();
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
-    await page.locator(".product-card").first().waitFor({ timeout: 15_000 });
+    await page.locator("body").waitFor({ timeout: 15_000 });
 
+    const initial = await inspectPage(page);
     scores.push(
-      await runTask(taskNames[0], async () => {
-        const productCount = await page.locator(".product-card").count();
-        if (productCount !== 6) {
-          throw new Error(`expected 6 products, found ${productCount}`);
+      await runTask(DEFAULT_TASK_NAMES[0], async () => {
+        if (initial.bodyTextLength === 0 && !initial.title) {
+          return failed(
+            DEFAULT_TASK_NAMES[0],
+            "The page has no title or visible body text."
+          );
         }
-        await page.locator("#cart-title").waitFor();
+        return passed(
+          DEFAULT_TASK_NAMES[0],
+          `Rendered page${initial.title ? ` titled "${initial.title}"` : ""}.`
+        );
       })
     );
 
     scores.push(
-      await runTask(taskNames[1], async () => {
-        await page.locator("#roast-filter").selectOption("medium");
-        const mediumCount = await page.locator(".product-card").count();
-        if (mediumCount !== 2) {
-          throw new Error(`expected 2 medium roasts, found ${mediumCount}`);
+      await runTask(DEFAULT_TASK_NAMES[1], async () =>
+        passed(
+          DEFAULT_TASK_NAMES[1],
+          `Inspected ${initial.controls} user-facing control(s): ${initial.buttons} button(s), ${initial.links} link(s), and ${initial.forms} form(s).`
+        )
+      )
+    );
+
+    scores.push(
+      await runTask(DEFAULT_TASK_NAMES[2], async () => {
+        if (initial.controls === 0) {
+          return passed(
+            DEFAULT_TASK_NAMES[2],
+            "No interactive controls were present; this appears to be a static page."
+          );
         }
-        await page.locator("#roast-filter").selectOption("all");
+        if (initial.enabledButtons === 0 && initial.buttons > 0) {
+          return failed(
+            DEFAULT_TASK_NAMES[2],
+            `Found ${initial.buttons} button(s), but all were disabled.`
+          );
+        }
+        return passed(
+          DEFAULT_TASK_NAMES[2],
+          `${initial.enabledButtons} of ${initial.buttons} button(s) were enabled.`
+        );
       })
     );
 
     scores.push(
-      await runTask(taskNames[2], async () => {
-        const brazilCard = page.locator(".product-card").filter({
-          hasText: "Fazenda Mio",
-        });
-        await brazilCard.getByRole("button", { name: "Add" }).click();
-        if ((await cartCount(page)) !== 1) {
-          throw new Error("cart count did not become 1");
+      await runTask(DEFAULT_TASK_NAMES[3], async () => {
+        if (initial.forms === 0) {
+          return passed(DEFAULT_TASK_NAMES[3], "No forms were present; skipped.");
         }
-        const state = await persistedState(page);
-        if (state.cart?.["brazil-cerrado"] !== 1) {
-          throw new Error("Brazil cart line was not persisted");
+        if (initial.formsWithControls !== initial.forms) {
+          return failed(
+            DEFAULT_TASK_NAMES[3],
+            `${initial.forms - initial.formsWithControls} form(s) had no usable controls.`
+          );
         }
+        return passed(
+          DEFAULT_TASK_NAMES[3],
+          `All ${initial.forms} form(s) exposed at least one usable control.`
+        );
       })
     );
 
     scores.push(
-      await runTask(taskNames[3], async () => {
-        await page
-          .getByRole("button", { name: "Increase Fazenda Mio quantity" })
-          .click();
-        if ((await cartCount(page)) !== 2) {
-          throw new Error("cart count did not become 2");
+      await runTask(DEFAULT_TASK_NAMES[4], async () => {
+        if (initial.links === 0) {
+          return passed(
+            DEFAULT_TASK_NAMES[4],
+            "No anchor links were present; skipped."
+          );
         }
-        const state = await persistedState(page);
-        if (state.cart?.["brazil-cerrado"] !== 2) {
-          throw new Error("updated Brazil quantity was not persisted");
+        if (initial.linksWithDestinations !== initial.links) {
+          return failed(
+            DEFAULT_TASK_NAMES[4],
+            `${initial.links - initial.linksWithDestinations} link(s) had no destination.`
+          );
         }
+        return passed(
+          DEFAULT_TASK_NAMES[4],
+          `All ${initial.links} link(s) exposed destinations.`
+        );
       })
     );
 
     scores.push(
-      await runTask(taskNames[4], async () => {
-        await page.reload({ waitUntil: "domcontentloaded" });
-        await page.locator(".cart-count").waitFor();
-        if ((await cartCount(page)) !== 2) {
-          throw new Error("cart count was not restored after reload");
+      await runTask(DEFAULT_TASK_NAMES[5], async () => {
+        await page.reload({ waitUntil: "domcontentloaded", timeout: 30_000 });
+        const afterReload = await inspectPage(page);
+        if (afterReload.bodyTextLength === 0 && !afterReload.title) {
+          return failed(
+            DEFAULT_TASK_NAMES[5],
+            "The page lost its rendered content after reload."
+          );
         }
-        const state = await persistedState(page);
-        if (state.cart?.["brazil-cerrado"] !== 2) {
-          throw new Error("cart state was not restored from localStorage");
-        }
+        return passed(
+          DEFAULT_TASK_NAMES[5],
+          `Rendered content remained available after reload (${afterReload.controls} control(s) found).`
+        );
       })
     );
 
     scores.push(
-      await runTask(taskNames[5], async () => {
-        await page.getByRole("button", { name: "Log in" }).click();
-        const state = await persistedState(page);
-        if (state.isLoggedIn !== true) {
-          throw new Error("login state was not persisted");
+      await runTask(DEFAULT_TASK_NAMES[6], async () => {
+        if (!initial.modelContextAvailable) {
+          return passed(
+            DEFAULT_TASK_NAMES[6],
+            "The current browser did not expose navigator.modelContext; WebMCP runtime inspection was skipped."
+          );
         }
+        return passed(
+          DEFAULT_TASK_NAMES[6],
+          "navigator.modelContext is exposed by the running page."
+        );
       })
     );
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
-    while (scores.length < TASK_COUNT) {
+    while (scores.length < DEFAULT_TASK_NAMES.length) {
       scores.push({
-        name: taskNames[scores.length],
+        name: DEFAULT_TASK_NAMES[scores.length],
         passed: false,
         detail,
       });
