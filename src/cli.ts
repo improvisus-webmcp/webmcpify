@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import "./lib/load-env.js";
 import { Command } from "commander";
 import { runGenerate } from "./commands/generate.js";
 import { runReview } from "./commands/review.js";
@@ -8,7 +9,7 @@ import { runEval } from "./commands/eval.js";
 import { runBaseline } from "./commands/baseline.js";
 
 const providerHelp =
-  "AI provider to use: gemini, antigravity, or claude";
+  "AI provider to use: gemini, antigravity, claude, or codex";
 
 const program = new Command();
 
@@ -58,4 +59,8 @@ program
   .option("--provider <name>", providerHelp, "gemini")
   .action(runBaseline);
 
-program.parse();
+program.parseAsync().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`[webmcpify] ${message}`);
+  process.exitCode = 1;
+});

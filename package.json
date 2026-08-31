@@ -38,7 +38,10 @@
   },
   "dependencies": {
     "commander": "^12.1.0",
-    "express": "^4.22.2"
+    "dotenv": "^17.4.2",
+    "execa": "^10.0.1",
+    "express": "^4.22.2",
+    "playwright-core": "^1.62.1"
   },
   "devDependencies": {
     "@types/express": "^4.17.25",
