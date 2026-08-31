@@ -26,11 +26,11 @@ export interface RepairOptions {
   maxRepairs?: number | string;
 }
 
-async function readLastEvaluation(): Promise<{
+async function readLastEvaluation(sitePath: string): Promise<{
   evaluation: StoredTestEvaluation;
   path: string;
 }> {
-  const evaluationPath = await latestTrajectoryPath("test-eval");
+  const evaluationPath = await latestTrajectoryPath("test-eval", sitePath);
   if (!evaluationPath || !existsSync(evaluationPath)) {
     throw new Error(
       `No test evaluation found in trajectories. Run "webmcpify test" first.`
@@ -55,17 +55,17 @@ async function readLastEvaluation(): Promise<{
 
 async function runPlainRepair(opts: RepairOptions): Promise<void> {
   const provider = resolveProvider(opts.provider);
+  const sitePath = path.resolve(opts.path ?? process.cwd());
   const {
     evaluation,
     path: evaluationPath,
-  } = await readLastEvaluation();
+  } = await readLastEvaluation(sitePath);
   const failedTasks = evaluation.scores.results.filter((task) => !task.passed);
 
   if (failedTasks.length === 0) {
     throw new Error("The last test passed every task; there is nothing to repair.");
   }
 
-  const sitePath = path.resolve(opts.path ?? process.cwd());
   const mcpConfigPath = await writeChromeDevtoolsMcpConfig(sitePath);
   const repairTrajectory = createTrajectoryPath("repair");
   const failures = failedTasks

@@ -1,4 +1,4 @@
-import { chromium, type Browser, type Page } from "playwright-core";
+import { chromium, type Browser, type BrowserContext, type Page } from "playwright-core";
 import type { Task } from "./tasks.js";
 
 export interface TaskResult {
@@ -15,7 +15,7 @@ export interface TaskScoreSummary {
 
 let browserCache: Browser | null = null;
 
-async function getPage(url: string): Promise<Page> {
+async function getBrowser(): Promise<Browser> {
   if (!browserCache) {
     const cdpUrl = process.env.WEBMCPIFY_CDP_URL ?? "http://127.0.0.1:9222";
     try {
@@ -28,39 +28,35 @@ async function getPage(url: string): Promise<Page> {
       );
     }
   }
+  return browserCache;
+}
 
-  const pages = browserCache.contexts().flatMap((context) => context.pages());
-  if (pages.length === 0) {
-    throw new Error("The connected Chrome instance has no open pages.");
-  }
+async function getIsolatedPage(url: string): Promise<{ context: BrowserContext; page: Page }> {
+  const browser = await getBrowser();
+  const context = browser.contexts()[0];
+  if (!context) throw new Error("The connected Chrome instance has no browser context.");
 
-  const targetOrigin = new URL(url).origin;
-  const page =
-    pages.find((candidate) => {
-      try {
-        return new URL(candidate.url()).origin === targetOrigin;
-      } catch {
-        return false;
-      }
-    }) ?? pages[0];
-
-  const pageOrigin = (() => {
-    try {
-      return new URL(page.url()).origin;
-    } catch {
-      return "";
-    }
-  })();
-  if (pageOrigin !== targetOrigin) {
+  await context.clearCookies();
+  const page = await context.newPage();
+  try {
     await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.evaluate(() => {
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+    });
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 30_000 });
+    await page.locator("body").waitFor({ timeout: 15_000 });
+    return { context, page };
+  } catch (error) {
+    await page.close().catch(() => undefined);
+    throw error;
   }
-  await page.locator("body").waitFor({ timeout: 15_000 });
-  return page;
 }
 
 export async function scoreTask(url: string, task: Task): Promise<TaskResult> {
+  let page: Page | undefined;
   try {
-    const page = await getPage(url);
+    ({ page } = await getIsolatedPage(url));
     const passed = await page.evaluate(task.verify);
     return {
       task: task.id,
@@ -73,6 +69,8 @@ export async function scoreTask(url: string, task: Task): Promise<TaskResult> {
       passed: false,
       detail: `verify threw: ${error instanceof Error ? error.message : String(error)}`,
     };
+  } finally {
+    await page?.close().catch(() => undefined);
   }
 }
 

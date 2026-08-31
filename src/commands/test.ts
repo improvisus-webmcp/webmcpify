@@ -1,10 +1,11 @@
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import { scoreTasks, type TaskScoreSummary } from "../lib/scoring.js";
-import { loadTasks, type Task } from "../lib/tasks.js";
+import { loadTasks, taskFingerprint, type Task } from "../lib/tasks.js";
 import { writeChromeDevtoolsMcpConfig } from "../lib/mcp-config.js";
 import {
   createTrajectoryArtifact,
@@ -21,6 +22,10 @@ export interface TestOptions {
 
 export interface StoredTestEvaluation {
   version: number;
+  mode: "webmcp";
+  runId: string;
+  targetProject: string;
+  taskSetId: string;
   provider: string;
   url: string;
   recordedAt: string;
@@ -50,6 +55,8 @@ export async function runTest(opts: TestOptions): Promise<StoredTestEvaluation> 
   const provider = resolveProvider(opts.provider);
   const sitePath = path.resolve(opts.path ?? process.cwd());
   const tasks = await loadTasks(sitePath);
+  const runId = randomUUID();
+  const taskSetId = taskFingerprint(tasks);
   const trajectory = createTrajectoryPath("test", "all-tasks");
   const approvalPath = path.join(
     sitePath,
@@ -97,10 +104,12 @@ pass from assumptions or from merely inspecting source code.`;
     saveTo: trajectory,
     trajectoryMetadata: {
       role: "test",
+      runId,
       sitePath,
       url: opts.url,
       approvalPath,
       isolation: "mcp-only; no source access",
+      taskSetId,
     },
   });
 
@@ -108,6 +117,10 @@ pass from assumptions or from merely inspecting source code.`;
   const scores = await scoreTasks(opts.url, tasks);
   const evaluation: StoredTestEvaluation = {
     version: TEST_EVALUATION_VERSION,
+    mode: "webmcp",
+    runId,
+    targetProject: sitePath,
+    taskSetId,
     provider,
     url: opts.url,
     recordedAt: new Date().toISOString(),

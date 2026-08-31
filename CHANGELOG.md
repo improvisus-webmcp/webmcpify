@@ -4,6 +4,20 @@ All notable changes to WebMCPify are documented here.
 
 ## [Unreleased]
 
+### Added: project-scoped baseline and WebMCP evaluation
+
+Baseline and WebMCP test runs now snapshot the same approved `tasks.json`,
+record a task-set fingerprint, run ID, target project, evaluation mode, and
+task-level independent scores. The scorer opens a fresh page for every task,
+clears cookies and web storage, reloads the target, and closes the page after
+verification so task state does not leak across runs.
+
+Trajectory lookup can now be scoped to a target project; `eval`, review, and
+plain repair no longer have to select a globally latest artifact. Focused
+fixture verification confirms identical task definitions, per-task baseline
+versus WebMCP comparison data, and project-isolated trajectory selection.
+No live AI provider was used.
+
 ### Added: structured human review and verification integrity
 
 Review now consumes `.webmcpify/proposed-tools.json`, displays each complete

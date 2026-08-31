@@ -110,8 +110,9 @@ program
 program
   .command("eval")
   .description("Print the pass/fail report for the last test run")
-  .action(async () => {
-    await runEval();
+  .option("-p, --path <dir>", "path to the target project")
+  .action(async (opts) => {
+    await runEval(opts.path);
   });
 
 program

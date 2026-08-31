@@ -1,9 +1,10 @@
 import path from "node:path";
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import { scoreTasks } from "../lib/scoring.js";
-import { loadTasks } from "../lib/tasks.js";
+import { loadTasks, taskFingerprint } from "../lib/tasks.js";
 import {
   DISCOVERY_GUIDANCE,
   TOOL_PLACEMENT_GUIDANCE,
@@ -42,6 +43,8 @@ export async function runBaseline(opts: {
   const provider = resolveProvider(opts.provider);
   const sitePath = path.resolve(opts.path);
   const tasks = await loadTasks(sitePath);
+  const runId = randomUUID();
+  const taskSetId = taskFingerprint(tasks);
   const trajectoryPath = createTrajectoryPath("baseline");
   const mcpConfigPath = path.join(sitePath, ".mcp.json");
   const taskContext = `Use these reviewed project tasks as the fixed evaluation
@@ -62,10 +65,12 @@ ${JSON.stringify(tasks, null, 2)}`;
     saveTo: trajectoryPath,
     trajectoryMetadata: {
       role: "baseline",
+      runId,
       sitePath,
       url: opts.url,
       tasksPath: path.join(sitePath, "tasks.json"),
       taskCount: tasks.length,
+      taskSetId,
     },
   });
 
@@ -75,12 +80,18 @@ ${JSON.stringify(tasks, null, 2)}`;
   const scores = await scoreTasks(opts.url, tasks);
   const evaluationPath = await createTrajectoryArtifact(
     "baseline-eval",
-    { tasks, scores },
+    { version: 1, mode: "baseline", runId, targetProject: sitePath, taskSetId, tasks, scores },
     {
       provider,
       url: opts.url,
       sourceTrajectory: trajectoryPath,
       cwd: sitePath,
+      sitePath,
+      runId,
+      targetProject: sitePath,
+      mode: "baseline",
+      taskSetId,
+      taskCount: scores.total,
     }
   );
   console.log(`[baseline] result: ${scores.passed}/${scores.total} tasks passed`);

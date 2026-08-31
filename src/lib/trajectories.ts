@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { access, appendFile, mkdir, readdir, writeFile } from "node:fs/promises";
+import { access, appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { packageRoot } from "./paths.js";
 
@@ -151,7 +151,8 @@ export async function createTrajectoryArtifact(
 }
 
 export async function latestTrajectoryPath(
-  role: string
+  role: string,
+  sitePath?: string
 ): Promise<string | undefined> {
   await mkdir(trajectoryDirectory, { recursive: true });
   const prefix = `${safeSegment(role)}-`;
@@ -168,13 +169,31 @@ export async function latestTrajectoryPath(
     .sort();
 
   if (dynamic.length > 0) {
-    return path.join(trajectoryDirectory, dynamic[dynamic.length - 1]);
+    const candidates = dynamic.reverse();
+    if (!sitePath) return path.join(trajectoryDirectory, candidates[0]);
+    const target = path.resolve(sitePath);
+    for (const candidate of candidates) {
+      const candidatePath = path.join(trajectoryDirectory, candidate);
+      try {
+        const metadata = JSON.parse(await readFile(metadataPath(candidatePath), "utf8")) as Record<string, unknown>;
+        const recordedSite = metadata.sitePath ?? metadata.cwd ?? metadata.targetProject;
+        if (typeof recordedSite === "string" && path.resolve(recordedSite) === target) return candidatePath;
+      } catch {
+        // Ignore malformed/unrelated artifacts while searching for this project.
+      }
+    }
+    return undefined;
   }
 
   const legacy = path.join(trajectoryDirectory, `${safeSegment(role)}.json`);
   try {
     await access(legacy);
-    return legacy;
+    if (!sitePath) return legacy;
+    const metadata = JSON.parse(await readFile(metadataPath(legacy), "utf8")) as Record<string, unknown>;
+    const recordedSite = metadata.sitePath ?? metadata.cwd ?? metadata.targetProject;
+    return typeof recordedSite === "string" && path.resolve(recordedSite) === path.resolve(sitePath)
+      ? legacy
+      : undefined;
   } catch {
     return undefined;
   }

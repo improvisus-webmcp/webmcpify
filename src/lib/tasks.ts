@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { validateVerifyExpression, verificationErrors, type VerificationContext, type VerificationIssue } from "./task-verification.js";
@@ -7,6 +8,10 @@ export interface Task {
   id: string;
   description: string;
   verify: string;
+}
+
+export function taskFingerprint(tasks: Task[]): string {
+  return createHash("sha256").update(JSON.stringify(tasks)).digest("hex").slice(0, 16);
 }
 
 export function taskVerificationIssues(task: Task, context: VerificationContext = {}): VerificationIssue[] {

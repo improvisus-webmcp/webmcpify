@@ -54,9 +54,9 @@ The agent's report and the independent evaluator are deliberately separate:
 | `patch-*.json` | Extracted unified source diff, changed files, source fingerprint, and patch status. | `sourceTrajectory`, `patchPath` |
 | `apply-*.json` | Patch application, rollback, and build/typecheck result. | `runId`, `patchPath` |
 | `baseline-*.json` | Source-editing, self-verifying baseline agent output. | `baseline-*.meta.json` |
-| `baseline-eval-*.json` | Independent baseline score containing `tasks` and `scores`. | `sourceTrajectory` |
+| `baseline-eval-*.json` | Independent baseline score containing the exact task snapshot, task-set fingerprint, run/project identity, and task-level `scores`. | `sourceTrajectory`, `taskSetId`, `targetProject` |
 | `test-*.json` | Source-blind, MCP-only test-agent output for all approved tasks. | `test-*.meta.json` |
-| `test-eval-*.json` | Independent score containing the exact task definitions used and one result per task. | `sourceTrajectory`, `approvalPath` |
+| `test-eval-*.json` | Independent WebMCP score containing the exact task snapshot, task-set fingerprint, run/project identity, and one result per task. | `sourceTrajectory`, `approvalPath`, `taskSetId`, `targetProject` |
 | `repair-*.json` | Plain repair-agent output, including the failed task context. | `sourceEvaluation` |
 | `temporal-test-*.json` | One durable score checkpoint for one task and one attempt. | `attempt`, task ID in metadata |
 | `temporal-repair-*.json` | Durable workflow result, or an error payload when the workflow fails. | `workflowId`, task ID, attempt budget |
@@ -117,10 +117,11 @@ Independent score artifacts use this shape:
 }
 ```
 
-`test-eval` additionally stores `version`, `provider`, `url`, and
-`recordedAt`. The `tasks` array is copied into the evaluation so a later task
-file edit does not change what that score meant. A verifier that throws is
-recorded as a failed result with `detail` beginning `verify threw:`.
+`baseline-eval` and `test-eval` store `version`, `mode`, `runId`,
+`targetProject`, `taskSetId`, and the exact task snapshot. A later task-file
+edit therefore does not change what a score meant. A verifier that throws is
+recorded as a failed result with `detail` beginning `verify threw:`. Each task
+is scored in a fresh page after cookies and web storage are cleared.
 
 Review decisions contain `approved`, full structured `tools`, and `tasks`. On
 approval, the same approved task definitions are written to the target
@@ -159,10 +160,9 @@ test-eval.meta.sourceTrajectory ──► test.json
 repair.meta.sourceEvaluation ────► test-eval.json
 ```
 
-`eval` and plain `repair` currently select the latest `test-eval` artifact in
-the package-level `trajectories/` directory. When multiple target projects are
-being evaluated from the same checkout, verify the sidecar's `sitePath` and
-`url` before using that result.
+`eval -p <target-project>` and plain `repair -p <target-project>` select the
+latest matching `test-eval` artifact by sidecar project identity. Without a
+path, `eval` retains the legacy latest-artifact behavior for convenience.
 
 ## Historical artifacts
 
@@ -206,3 +206,11 @@ fit the columns belong in the sidecar. A row has this shape:
 | — | generate | completed | fixture | — | [generate-2026-08-31T14-33-16-455Z-7bc3e020.json](./generate-2026-08-31T14-33-16-455Z-7bc3e020.json) | [metadata](./generate-2026-08-31T14-33-16-455Z-7bc3e020.meta.json) |
 | — | review-decision | completed | — | — | [review-decision-2026-08-31T14-33-16-676Z-dc88b8d8.json](./review-decision-2026-08-31T14-33-16-676Z-dc88b8d8.json) | [metadata](./review-decision-2026-08-31T14-33-16-676Z-dc88b8d8.meta.json) |
 | — | review-decision | completed | — | — | [review-decision-2026-08-31T14-33-16-834Z-3e2c358c.json](./review-decision-2026-08-31T14-33-16-834Z-3e2c358c.json) | [metadata](./review-decision-2026-08-31T14-33-16-834Z-3e2c358c.meta.json) |
+| — | baseline-eval | completed | — | — | [baseline-eval-2026-08-31T14-37-55-431Z-e8759741-phase5-fixture.json](./baseline-eval-2026-08-31T14-37-55-431Z-e8759741-phase5-fixture.json) | [metadata](./baseline-eval-2026-08-31T14-37-55-431Z-e8759741-phase5-fixture.meta.json) |
+| — | test-eval | completed | — | — | [test-eval-2026-08-31T14-37-55-451Z-92d561dd-phase5-fixture.json](./test-eval-2026-08-31T14-37-55-451Z-92d561dd-phase5-fixture.json) | [metadata](./test-eval-2026-08-31T14-37-55-451Z-92d561dd-phase5-fixture.meta.json) |
+| — | test-eval | completed | — | — | [test-eval-2026-08-31T14-37-55-454Z-c6d104a5-phase5-fixture.json](./test-eval-2026-08-31T14-37-55-454Z-c6d104a5-phase5-fixture.json) | [metadata](./test-eval-2026-08-31T14-37-55-454Z-c6d104a5-phase5-fixture.meta.json) |
+| — | proposed-tools | completed | — | — | [proposed-tools-2026-08-31T14-37-57-181Z-67917178.json](./proposed-tools-2026-08-31T14-37-57-181Z-67917178.json) | [metadata](./proposed-tools-2026-08-31T14-37-57-181Z-67917178.meta.json) |
+| — | proposed-tools | completed | — | — | [proposed-tools-2026-08-31T14-37-57-260Z-425adc00.json](./proposed-tools-2026-08-31T14-37-57-260Z-425adc00.json) | [metadata](./proposed-tools-2026-08-31T14-37-57-260Z-425adc00.meta.json) |
+| — | baseline-eval | completed | — | — | [baseline-eval-2026-08-31T14-38-52-331Z-5c108a63-phase5-fixture.json](./baseline-eval-2026-08-31T14-38-52-331Z-5c108a63-phase5-fixture.json) | [metadata](./baseline-eval-2026-08-31T14-38-52-331Z-5c108a63-phase5-fixture.meta.json) |
+| — | test-eval | completed | — | — | [test-eval-2026-08-31T14-38-52-368Z-5e134e70-phase5-fixture.json](./test-eval-2026-08-31T14-38-52-368Z-5e134e70-phase5-fixture.json) | [metadata](./test-eval-2026-08-31T14-38-52-368Z-5e134e70-phase5-fixture.meta.json) |
+| — | test-eval | completed | — | — | [test-eval-2026-08-31T14-38-52-376Z-59db92d4-phase5-fixture.json](./test-eval-2026-08-31T14-38-52-376Z-59db92d4-phase5-fixture.json) | [metadata](./test-eval-2026-08-31T14-38-52-376Z-59db92d4-phase5-fixture.meta.json) |
