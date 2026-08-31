@@ -99,6 +99,11 @@ to `./target-site/.webmcpify/discovery.json`. Run discovery independently with:
 node dist/cli.js discover --path ./target-site
 ```
 
+The generation response must include a validated structured tool proposal. On
+success it is saved to `./target-site/.webmcpify/proposed-tools.json`; malformed,
+duplicate, or discovery-unsupported proposals fail generation before a source
+patch is created.
+
 Generation is a draft-only, read-only step. It proposes both WebMCP changes
 and a project-local task list. Choose `auto`, `declarative`, or `imperative`:
 

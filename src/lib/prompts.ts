@@ -73,3 +73,33 @@ verified this way.
 Output the task proposal as JSON:
 [{ "id": "...", "description": "...", "verify": "..." }]
 `.trim();
+
+export const TOOL_PROPOSAL_PROMPT = `
+Produce a structured tool proposal after inspecting the supplied discovery.json.
+Do not output free-form tool definitions. Output this exact JSON shape in a
+fenced json block labelled TOOL_PROPOSALS_JSON:
+{
+  "tools": [{
+    "id": "stable-tool-id",
+    "name": "tool_name",
+    "description": "What the tool does",
+    "parameters": { "type": "object", "properties": {}, "required": [] },
+    "implementation": {
+      "handler": "path/to/file.ts#handler-or-function",
+      "action": "the discovered action this invokes",
+      "state": "the discovered state source, when applicable"
+    },
+    "placement": {
+      "strategy": "imperative or declarative",
+      "file": "path/to/registration-or-component.tsx",
+      "rationale": "Why this location and strategy fit"
+    },
+    "sourceFiles": ["path/to/file.tsx"]
+  }]
+}
+Every sourceFiles and placement.file path must occur in discovery.sourceFiles,
+and each tool must correspond to a discovered form, button, action, API,
+authentication, state, or existing-WebMCP signal. Do not propose tools for
+capabilities absent from discovery. Keep this JSON separate from the later
+TASKS_JSON and unified diff sections.
+`.trim();

@@ -4,6 +4,26 @@ All notable changes to WebMCPify are documented here.
 
 ## [Unreleased]
 
+### Added: structured tool generation
+
+Generation now consumes the target project's structured `discovery.json` and
+requires a JSON tool proposal containing names, descriptions, parameter
+schemas, implementation handlers/actions, placement strategy, and source
+files. Valid proposals are written to `.webmcpify/proposed-tools.json` and
+recorded as `proposed-tools-*` trajectory artifacts.
+
+Validation rejects malformed schemas, duplicate names, unknown source files,
+unsupported authentication/API capabilities, and declarative tools when no
+discovered forms exist. The implementation remains domain-agnostic and does
+not apply source changes.
+
+Focused validation passed against both local requested project checkouts,
+including proposal-file serialization, duplicate-name rejection, malformed
+schema rejection, and unsupported-source rejection.
+Real Codex generation was attempted for the Coffee Store checkout but the
+provider did not return a result, so no target generation success is claimed.
+`pnpm tsc --noEmit` and `pnpm build` pass.
+
 ### Added: structured project discovery
 
 Added a domain-agnostic discovery module and `webmcpify discover` command.

@@ -32,6 +32,7 @@ export interface DiscoveryResult {
   state: DiscoverySignal[];
   existingWebMCP: DiscoverySignal[];
   capabilities: string[];
+  sourceFiles: string[];
   filesScanned: number;
 }
 
@@ -177,7 +178,7 @@ export async function discoverProject(sitePath: string): Promise<DiscoveryResult
     routes: [...new Set([...routes, ...sitemap.map((entry) => { try { return new URL(entry).pathname; } catch { return entry; } })])].sort(),
     sitemap: [...new Set(sitemap)],
     robots: robots.length ? [...new Set(robots)] : undefined,
-    forms: forms.slice(0, 200), buttons: buttons.slice(0, 200), actions: actions.slice(0, 300), apis: apis.slice(0, 300), authentication: authentication.slice(0, 200), state: state.slice(0, 200), existingWebMCP: existingWebMCP.slice(0, 200), capabilities: [...capabilitySet].sort(), filesScanned: files.length,
+    forms: forms.slice(0, 200), buttons: buttons.slice(0, 200), actions: actions.slice(0, 300), apis: apis.slice(0, 300), authentication: authentication.slice(0, 200), state: state.slice(0, 200), existingWebMCP: existingWebMCP.slice(0, 200), capabilities: [...capabilitySet].sort(), sourceFiles: files.map((file) => path.relative(sitePath, file).split(path.sep).join("/")).sort(), filesScanned: files.length,
   };
 }
 

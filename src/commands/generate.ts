@@ -6,11 +6,13 @@ import {
   DISCOVERY_GUIDANCE,
   TASK_AUTHORING_PROMPT,
   TOOL_PLACEMENT_GUIDANCE,
+  TOOL_PROPOSAL_PROMPT,
 } from "../lib/prompts.js";
 import { createTrajectoryPath } from "../lib/trajectories.js";
 import { createPendingPatch } from "../lib/patches.js";
 import { readFile } from "node:fs/promises";
 import { discoveryPath, runDiscovery } from "../lib/discovery.js";
+import { extractAndValidateProposedTools, writeProposedTools } from "../lib/tool-proposals.js";
 
 export const GENERATE_ONLY_PROMPT = `
 ${DISCOVERY_GUIDANCE}
@@ -23,6 +25,8 @@ placement/wiring summary for each tool. Use explicit file paths in the diff.
 Do not deploy or verify — that happens in a separate step.
 
 ${TOOL_PLACEMENT_GUIDANCE}
+
+${TOOL_PROPOSAL_PROMPT}
 
 ${TASK_AUTHORING_PROMPT}
 `.trim();
@@ -115,12 +119,16 @@ ${opts.context}`
   });
 
   try {
+    const tools = extractAndValidateProposedTools(await readFile(saveTo, "utf8"), discovery);
+    const proposalFile = await writeProposedTools(sitePath, tools, discoveryPath(sitePath), saveTo);
     const patch = await createPendingPatch(
       sitePath,
       await readFile(saveTo, "utf8"),
       saveTo,
     );
     console.log(`[generate] draft saved to ${saveTo}`);
+    console.log(`[generate] proposed tools: ${proposalFile}`);
+    console.log(`[generate] validated ${tools.length} tool proposal(s)`);
     console.log(`[generate] generated source changes: ${patch.changedFiles.join(", ")}`);
     console.log(`[generate] patch: ${patch.patchPath}`);
     console.log("[generate] status: awaiting review");

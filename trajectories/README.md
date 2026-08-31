@@ -47,8 +47,9 @@ The agent's report and the independent evaluator are deliberately separate:
 
 | Role | Payload and purpose | Main links |
 | --- | --- | --- |
-| `generate-*.json` | Read-only provider output: discovery findings, proposed WebMCP diff, placement/wiring notes, and a 5–6 task proposal. | `generate-*.meta.json` |
+| `generate-*.json` | Read-only provider output: discovery findings, structured tool proposal, proposed WebMCP diff, placement/wiring notes, and a 5–6 task proposal. | `generate-*.meta.json` |
 | `discovery-*.json` | Structured static discovery snapshot for one target project. | `discoveryPath`, `sitePath` |
+| `proposed-tools-*.json` | Validated structured WebMCP tool proposals derived from discovery. | `discoveryPath`, `sourceTrajectory`, `proposedToolsPath` |
 | `review-decision-*.json` | Human approval or rejection, selected tools, edited task definitions, and paths to the draft and project approval files. | `draftPath`, `approvalPath`, `tasksPath` |
 | `patch-*.json` | Extracted unified source diff, changed files, source fingerprint, and patch status. | `sourceTrajectory`, `patchPath` |
 | `apply-*.json` | Patch application, rollback, and build/typecheck result. | `runId`, `patchPath` |
@@ -182,3 +183,9 @@ fit the columns belong in the sidecar. A row has this shape:
 | — | discovery | completed | — | — | [discovery-2026-08-31T14-00-45-511Z-4ef63fc3.json](./discovery-2026-08-31T14-00-45-511Z-4ef63fc3.json) | [metadata](./discovery-2026-08-31T14-00-45-511Z-4ef63fc3.meta.json) |
 | 2026-08-31T14:01:37.730Z | discovery | completed | — | — | [discovery-2026-08-31T14-01-37-730Z-b6f6e587.json](./discovery-2026-08-31T14-01-37-730Z-b6f6e587.json) | [metadata](./discovery-2026-08-31T14-01-37-730Z-b6f6e587.meta.json) |
 | 2026-08-31T14:01:39.832Z | discovery | completed | — | — | [discovery-2026-08-31T14-01-39-832Z-b4925d17.json](./discovery-2026-08-31T14-01-39-832Z-b4925d17.json) | [metadata](./discovery-2026-08-31T14-01-39-832Z-b4925d17.meta.json) |
+| 2026-08-31T14:12:53.902Z | discovery | completed | — | — | [discovery-2026-08-31T14-12-53-902Z-59b7aebe.json](./discovery-2026-08-31T14-12-53-902Z-59b7aebe.json) | [metadata](./discovery-2026-08-31T14-12-53-902Z-59b7aebe.meta.json) |
+| 2026-08-31T14:19:25.312Z | discovery | completed | — | — | [discovery-2026-08-31T14-19-25-313Z-8c9223b7.json](./discovery-2026-08-31T14-19-25-313Z-8c9223b7.json) | [metadata](./discovery-2026-08-31T14-19-25-313Z-8c9223b7.meta.json) |
+| — | generate | failed | codex | — | [generate-2026-08-31T14-21-44-489Z-0bd79908.json](./generate-2026-08-31T14-21-44-489Z-0bd79908.json) | [metadata](./generate-2026-08-31T14-21-44-489Z-0bd79908.meta.json) |
+| — | generate | failed | codex | — | [generate-2026-08-31T14-21-44-513Z-fdfd5b06.json](./generate-2026-08-31T14-21-44-513Z-fdfd5b06.json) | [metadata](./generate-2026-08-31T14-21-44-513Z-fdfd5b06.meta.json) |
+| — | proposed-tools | completed | — | — | [proposed-tools-2026-08-31T14-22-51-305Z-861912eb.json](./proposed-tools-2026-08-31T14-22-51-305Z-861912eb.json) | [metadata](./proposed-tools-2026-08-31T14-22-51-305Z-861912eb.meta.json) |
+| — | proposed-tools | completed | — | — | [proposed-tools-2026-08-31T14-22-51-367Z-6ed024d5.json](./proposed-tools-2026-08-31T14-22-51-367Z-6ed024d5.json) | [metadata](./proposed-tools-2026-08-31T14-22-51-367Z-6ed024d5.meta.json) |
