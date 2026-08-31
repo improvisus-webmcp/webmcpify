@@ -10,6 +10,7 @@ import { runBaseline } from "./commands/baseline.js";
 import { runInit } from "./commands/init.js";
 import { runApply } from "./commands/apply.js";
 import { runDiscover } from "./commands/discover.js";
+import { runFinalEval } from "./commands/final-eval.js";
 
 const providerHelp =
   "AI provider to use: gemini, antigravity, claude, or codex";
@@ -121,7 +122,20 @@ program
   .requiredOption("-p, --path <dir>", "path to the site's codebase")
   .requiredOption("-u, --url <url>", "URL of the running site")
   .option("--provider <name>", providerHelp, "gemini")
-  .action(runBaseline);
+  .action(async (opts) => {
+    await runBaseline(opts);
+  });
+
+program
+  .command("final-eval")
+  .description("Run the complete baseline, WebMCP, and Temporal comparison")
+  .requiredOption("-p, --path <dir>", "path to the target project")
+  .option("-u, --url <url>", "running target URL (defaults to WEBMCPIFY_URL or http://localhost:3000)")
+  .option("--provider <name>", providerHelp, "antigravity")
+  .option("--review-port <number>", "port for the human review checkpoint", "4173")
+  .action(async (opts) => {
+    await runFinalEval({ path: opts.path, url: opts.url, provider: opts.provider, reviewPort: opts.reviewPort });
+  });
 
 program.parseAsync().catch((error: unknown) => {
   const message = error instanceof Error ? error.message : String(error);

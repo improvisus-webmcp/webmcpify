@@ -7,6 +7,8 @@ const DEFAULT_PROVIDER: AIProvider = "gemini";
 export function resolveProvider(provider?: string): AIProvider {
   const selected = provider ?? process.env.WEBMCPIFY_PROVIDER ?? DEFAULT_PROVIDER;
 
+  if (selected === "agy") return "antigravity";
+
   if ((AI_PROVIDERS as readonly string[]).includes(selected)) {
     return selected as AIProvider;
   }

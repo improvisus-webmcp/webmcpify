@@ -8,6 +8,7 @@
     "webmcpify": "dist/cli.js"
   },
   "scripts": {
+    "webmcpify": "node dist/cli.js",
     "build": "tsc",
     "generate": "node dist/cli.js generate",
     "review": "node dist/cli.js review",
@@ -21,6 +22,7 @@
     "verify:review": "node scripts/verify-review.mjs",
     "verify:repair": "node scripts/verify-repair.mjs",
     "verify:evaluation": "node scripts/verify-evaluation.mjs",
+    "verify:final-eval": "node scripts/verify-final-eval.mjs",
     "temporal:worker": "node dist/temporal/worker.js",
     "dev": "tsx watch src/cli.ts",
     "test": "echo \"Error: no test specified\" && exit 1"

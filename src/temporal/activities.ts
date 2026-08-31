@@ -1,4 +1,5 @@
 import { runGenerate } from "../commands/generate.js";
+import { runApply } from "../commands/apply.js";
 import {
   runReviewPrompt,
   type ReviewResult,
@@ -36,7 +37,9 @@ export async function testActivity(
   sitePath: string,
   url: string,
   task: string,
-  attempt?: number
+  attempt?: number,
+  runId?: string,
+  taskSetId?: string
 ): Promise<ActivityTaskResult> {
   const tasks = await loadTasks(sitePath);
   const { results } = await scoreTasks(url, tasks);
@@ -67,9 +70,17 @@ export async function testActivity(
       attempt,
       tasksPath: `${sitePath}/tasks.json`,
       durable: true,
+      runId,
+      targetProject: sitePath,
+      taskSetId,
     }
   );
   return taskResult;
+}
+
+/** Apply the explicitly reviewed patch inside a durable repair attempt. */
+export async function applyActivity(sitePath: string): Promise<void> {
+  await runApply({ path: sitePath });
 }
 
 /** Block on the existing localhost approval page until the owner decides. */

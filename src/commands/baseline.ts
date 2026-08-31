@@ -13,6 +13,7 @@ import {
   createTrajectoryArtifact,
   createTrajectoryPath,
 } from "../lib/trajectories.js";
+import { writeChromeDevtoolsMcpConfig } from "../lib/mcp-config.js";
 
 export const AUDIT_PROMPT = `
 ${DISCOVERY_GUIDANCE}
@@ -39,6 +40,7 @@ export async function runBaseline(opts: {
   path: string;
   url: string;
   provider?: string;
+  readOnly?: boolean;
 }) {
   const provider = resolveProvider(opts.provider);
   const sitePath = path.resolve(opts.path);
@@ -47,21 +49,24 @@ export async function runBaseline(opts: {
   const taskSetId = taskFingerprint(tasks);
   const trajectoryPath = createTrajectoryPath("baseline");
   const mcpConfigPath = path.join(sitePath, ".mcp.json");
+  const baselineMcpConfig = opts.readOnly ? await writeChromeDevtoolsMcpConfig(sitePath) : mcpConfigPath;
   const taskContext = `Use these reviewed project tasks as the fixed evaluation
 cases. Attempt them through the site's real UI or WebMCP tools, and report the
 observed result for each:
 ${JSON.stringify(tasks, null, 2)}`;
 
-  console.log(
-    `[baseline] running one-shot self-verifying ${provider} session...`
-  );
+  const baselinePrompt = opts.readOnly
+    ? `This is the plain baseline level. Do not edit source files, install dependencies, create WebMCP registrations, or call WebMCP tools. Inspect and exercise only the existing user-facing UI with Chrome DevTools MCP. Use the exact reviewed tasks below and report each observed outcome.\n\n${JSON.stringify(tasks, null, 2)}`
+    : `${AUDIT_PROMPT}\n\n${taskContext}`;
+
+  console.log(`[baseline] running one-shot ${opts.readOnly ? "read-only " : ""}baseline ${provider} session...`);
 
   await runAgent({
     provider,
-    prompt: `${AUDIT_PROMPT}\n\n${taskContext}`,
+    prompt: opts.readOnly ? baselinePrompt : `${AUDIT_PROMPT}\n\n${taskContext}`,
     cwd: sitePath,
-    allowedTools: "Read,Edit,Bash,mcp__chrome-devtools__*",
-    mcpConfig: existsSync(mcpConfigPath) ? mcpConfigPath : undefined,
+    allowedTools: opts.readOnly ? "Read,mcp__chrome-devtools__*" : "Read,Edit,Bash,mcp__chrome-devtools__*",
+    mcpConfig: existsSync(baselineMcpConfig) ? baselineMcpConfig : undefined,
     saveTo: trajectoryPath,
     trajectoryMetadata: {
       role: "baseline",
@@ -96,4 +101,5 @@ ${JSON.stringify(tasks, null, 2)}`;
   );
   console.log(`[baseline] result: ${scores.passed}/${scores.total} tasks passed`);
   console.log(`[baseline] independent evaluation saved to ${evaluationPath}`);
+  return { runId, evaluationPath, tasks, scores };
 }

@@ -1,7 +1,7 @@
 import { proxyActivities } from "@temporalio/workflow";
 import type * as activities from "./activities.js";
 
-const { generateActivity, testActivity, reviewActivity } =
+const { generateActivity, testActivity, reviewActivity, applyActivity } =
   proxyActivities<typeof activities>({
     startToCloseTimeout: "5 minutes",
     retry: { maximumAttempts: 3 },
@@ -13,6 +13,8 @@ export interface RepairWorkflowOptions {
   task: string;
   maxRepairs?: number;
   provider?: string;
+  runId?: string;
+  taskSetId?: string;
 }
 
 export interface RepairWorkflowResult {
@@ -31,7 +33,7 @@ export async function repairWorkflow(
   }
 
   for (let attempt = 0; attempt <= maxRepairs; attempt++) {
-    const result = await testActivity(opts.path, opts.url, opts.task, attempt);
+    const result = await testActivity(opts.path, opts.url, opts.task, attempt, opts.runId, opts.taskSetId);
     if (result.passed) {
       return { passed: true, attempts: attempt, task: opts.task };
     }
@@ -55,6 +57,7 @@ export async function repairWorkflow(
         reason: "The owner rejected the proposed repair.",
       };
     }
+    await applyActivity(opts.path);
   }
 
   // The loop always returns, but keeping an explicit fallback makes future

@@ -24,6 +24,8 @@ generate
    ├──► baseline ──► baseline-eval
    │
    └──► test ──────► test-eval ──► repair ──► patch ──► review ──► apply ──► repair-eval
+                                                                          │
+                                                                          └──► final-eval (Level 1 → Level 2 → Level 3)
                                       │
                                       └── durable mode:
                                           temporal-test → temporal-repair
@@ -60,6 +62,7 @@ The agent's report and the independent evaluator are deliberately separate:
 | `repair-*.json` | Isolated repair-agent output, including exact failed-task verification evidence and project/run context. | `sourceEvaluation`, `taskSetId` |
 | `repair-result-*.json` | Repair patch handoff status, failed tasks, real patch metadata, or an explicit no-change/failure result. | `repairTrajectory`, `patchPath`, `sourceEvaluation` |
 | `repair-eval-*.json` | Post-apply evaluation of affected tasks with before/after results and improved, unchanged, or regressed status. | `sourceEvaluation`, `patchPath`, `taskSetId` |
+| `final-eval-*.json` | End-to-end Level 1 baseline, Level 2 WebMCP, and Level 3 Temporal comparison using one approved task snapshot. | `targetProject`, `runId`, `taskSetId`, level evaluation paths |
 | `temporal-test-*.json` | One durable score checkpoint for one task and one attempt. | `attempt`, task ID in metadata |
 | `temporal-repair-*.json` | Durable workflow result, or an error payload when the workflow fails. | `workflowId`, task ID, attempt budget |
 
@@ -264,3 +267,4 @@ fit the columns belong in the sidecar. A row has this shape:
 | — | patch | completed | — | — | [patch-2026-08-31T15-01-38-848Z-735e6404.json](./patch-2026-08-31T15-01-38-848Z-735e6404.json) | [metadata](./patch-2026-08-31T15-01-38-848Z-735e6404.meta.json) |
 | — | patch | completed | — | — | [patch-2026-08-31T15-01-39-655Z-bca8de1c.json](./patch-2026-08-31T15-01-39-655Z-bca8de1c.json) | [metadata](./patch-2026-08-31T15-01-39-655Z-bca8de1c.meta.json) |
 | — | apply | completed | — | — | [apply-2026-08-31T15-01-40-395Z-d13abdd9.json](./apply-2026-08-31T15-01-40-395Z-d13abdd9.json) | [metadata](./apply-2026-08-31T15-01-40-395Z-d13abdd9.meta.json) |
+| 2026-08-31T15:57:38.588Z | discovery | completed | — | — | [discovery-2026-08-31T15-57-38-589Z-87d3a6ec.json](./discovery-2026-08-31T15-57-38-589Z-87d3a6ec.json) | [metadata](./discovery-2026-08-31T15-57-38-589Z-87d3a6ec.meta.json) |

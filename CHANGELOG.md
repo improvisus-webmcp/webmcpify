@@ -4,6 +4,21 @@ All notable changes to WebMCPify are documented here.
 
 ## [Unreleased]
 
+### Added: end-to-end final evaluation orchestration
+
+Added `pnpm webmcpify final-eval --path <project>` to connect the existing
+discovery/generation, human review, source apply, independent scoring, repair,
+and Temporal workflow stages. It preserves one approved task snapshot and
+fingerprint across Level 1 plain baseline, Level 2 WebMCP, and Level 3 durable
+Temporal results, then records a project-scoped comparison trajectory.
+
+The baseline stage is read-only and runs before the approved patch is applied.
+Repairs still enter the existing repair → review → apply path; approved repair
+results are retested, while rejected, failed, or unavailable stages remain
+explicitly recorded. Focused orchestration verification passed. No live final
+benchmark result is claimed until the command is run against the target with
+Antigravity, Chrome DevTools MCP, and Temporal available.
+
 ### Added: approved repair workflow
 
 Repair now selects the project-scoped baseline or WebMCP evaluation, supplies
