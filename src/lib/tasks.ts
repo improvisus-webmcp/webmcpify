@@ -14,6 +14,40 @@ export function taskFingerprint(tasks: Task[]): string {
   return createHash("sha256").update(JSON.stringify(tasks)).digest("hex").slice(0, 16);
 }
 
+export interface ApprovedTaskManifest {
+  version: 1;
+  approved: true;
+  approvalId: string;
+  draftPath: string;
+  taskSetId: string;
+  tasks: Task[];
+}
+
+export function approvedManifestPath(sitePath: string): string {
+  return path.join(sitePath, ".webmcpify", "approved-tools.json");
+}
+
+export async function loadApprovedTasks(sitePath: string): Promise<Task[]> {
+  const tasks = await loadTasks(sitePath);
+  const manifestPath = approvedManifestPath(sitePath);
+  if (!existsSync(manifestPath)) {
+    throw new Error(`No approved task manifest found at ${manifestPath}. Run "webmcpify review" first.`);
+  }
+  let manifest: Partial<ApprovedTaskManifest>;
+  try {
+    manifest = JSON.parse(await readFile(manifestPath, "utf8")) as Partial<ApprovedTaskManifest>;
+  } catch (error) {
+    throw new Error(`Could not parse approved manifest: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (manifest.approved !== true || typeof manifest.approvalId !== "string" || typeof manifest.taskSetId !== "string") {
+    throw new Error("The approved manifest is incomplete or not approved for this draft.");
+  }
+  if (!Array.isArray(manifest.tasks) || taskFingerprint(tasks) !== manifest.taskSetId || taskFingerprint(validateTasks(manifest.tasks)) !== manifest.taskSetId) {
+    throw new Error("tasks.json does not match the approved task set; refusing evaluation.");
+  }
+  return tasks;
+}
+
 export function taskVerificationIssues(task: Task, context: VerificationContext = {}): VerificationIssue[] {
   return validateVerifyExpression(task.verify, task.description, context);
 }

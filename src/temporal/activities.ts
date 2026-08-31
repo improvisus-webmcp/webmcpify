@@ -5,7 +5,7 @@ import {
   type ReviewResult,
 } from "../commands/review.js";
 import { scoreTasks } from "../lib/scoring.js";
-import { loadTasks } from "../lib/tasks.js";
+import { loadApprovedTasks } from "../lib/tasks.js";
 import { createTrajectoryArtifact } from "../lib/trajectories.js";
 
 export interface ActivityTaskResult {
@@ -41,7 +41,7 @@ export async function testActivity(
   runId?: string,
   taskSetId?: string
 ): Promise<ActivityTaskResult> {
-  const tasks = await loadTasks(sitePath);
+  const tasks = await loadApprovedTasks(sitePath);
   const { results } = await scoreTasks(url, tasks);
   const result = results.find((candidate) => candidate.task === task);
   if (!result) {

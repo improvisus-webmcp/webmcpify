@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import { scoreTasks } from "../lib/scoring.js";
-import { loadTasks, taskFingerprint } from "../lib/tasks.js";
+import { loadApprovedTasks, taskFingerprint } from "../lib/tasks.js";
 import {
   DISCOVERY_GUIDANCE,
   TOOL_PLACEMENT_GUIDANCE,
@@ -44,7 +44,7 @@ export async function runBaseline(opts: {
 }) {
   const provider = resolveProvider(opts.provider);
   const sitePath = path.resolve(opts.path);
-  const tasks = await loadTasks(sitePath);
+  const tasks = await loadApprovedTasks(sitePath);
   const runId = randomUUID();
   const taskSetId = taskFingerprint(tasks);
   const trajectoryPath = createTrajectoryPath("baseline");

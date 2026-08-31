@@ -1,44 +1,372 @@
 # WebMCPify
 
-WebMCPify audits and drafts [WebMCP](https://webmachinelearning.github.io/webmcp/) tool registrations for a website. It discovers the target site's actual stack, routes, interactive surface, handlers, and state before proposing tools. Generation stays separate from human approval, testing uses an isolated browser agent, raw trajectories are recorded, and behavior is scored independently from the agent's self-report.
+WebMCPify is a domain-agnostic CLI workflow for discovering, drafting, reviewing, applying, testing, and evaluating [WebMCP](https://webmachinelearning.github.io/webmcp/) tool integrations for existing web applications.
 
-The reference experiment used the real, unmodified [`jillesme/webmcp-coffee-store`](https://github.com/jillesme/webmcp-coffee-store) application. The product itself is domain-agnostic: baseline, generation, testing, review, and repair inspect the target site's actions rather than assuming a particular kind of application.
+The core idea is simple:
 
-## Dependencies
+```text
+existing web application
+        ↓
+     discover
+        ↓
+      generate
+        ↓
+ human review / approval
+        ↓
+       apply
+        ↓
+ isolated browser-agent test
+        ↓
+ independent verification
+        ↓
+      evaluation
+        ↓
+ repair / repeat
+```
 
-Required:
+WebMCPify does not assume that an application is a particular type of product. Instead, it inspects the target application's actual interactive surface: its forms, buttons, handlers, state stores, authentication signals, APIs, existing WebMCP integrations, and application structure.
 
-- Node.js 18 or newer for the normal pipeline; Node.js 20.3 or newer for the Temporal durable path
-- pnpm
-- A supported coding-agent CLI: Gemini, Claude Code, Codex, or Antigravity (`agy`)
-- Chrome or Chromium for the independent evaluator
+Generated tools are therefore grounded in real application behaviour rather than being invented from a high-level description.
 
-Optional, only for durable repair runs:
+---
 
-- Temporal CLI 1.8.1, used to run the local Temporal development server
-- Temporal TypeScript SDK 1.21.1: `@temporalio/client`, `@temporalio/worker`, and `@temporalio/workflow`
+## 1. What WebMCPify Does
 
-Temporal is used specifically to make the repair loop durable. It does not orchestrate the normal generation, review, testing, or evaluation pipeline.
+WebMCPify separates the WebMCP integration workflow into explicit stages.
 
-## Setup
+### Discovery
+
+The discovery phase identifies:
+
+* language and framework
+* framework versions
+* package manager
+* routes and site structure
+* sitemap and robots information when available
+* forms and inputs
+* buttons and event handlers
+* API/server handlers
+* authentication signals
+* state-management sources
+* existing WebMCP integrations
+* relevant source files
+
+Discovery is intentionally focused. It does not require the coding agent to read the entire repository file-by-file.
+
+The result is saved as:
+
+```text
+target-site/.webmcpify/discovery.json
+```
+
+---
+
+### Generation
+
+The generation agent uses the discovery result as its source of truth.
+
+It proposes:
+
+* WebMCP tool definitions
+* parameters and validation
+* implementation handlers
+* state sources
+* declarative or imperative placement
+* source changes
+* 5–6 realistic verification tasks
+
+The generated tools must correspond to discovered application capabilities.
+
+Generation is draft-only.
+
+It does not automatically modify the target application's source.
+
+Generated artifacts include:
+
+```text
+target-site/.webmcpify/proposed-tools.json
+target-site/.webmcpify/pending-diff.patch
+trajectories/generate-*.json
+trajectories/generate-*.meta.json
+```
+
+---
+
+### Human Review
+
+The review stage provides a local browser interface where the human reviewer can inspect:
+
+* proposed tools
+* tool parameters
+* implementation locations
+* verification tasks
+* verification expressions
+* generated source patch
+
+The reviewer must explicitly approve the draft.
+
+Approval creates:
+
+```text
+target-site/.webmcpify/approved-tools.json
+target-site/tasks.json
+```
+
+The source patch is still separate from approval.
+
+Approval does **not** mean that generated source changes have already been deployed.
+
+The reviewer should only approve a patch and verification task after inspecting it.
+
+---
+
+### Apply
+
+The `apply` stage applies the exact source patch that was approved.
+
+Before applying, WebMCPify validates:
+
+* approval state
+* source fingerprint
+* patch identity
+* Git state
+
+It then applies the approved patch and runs available project verification such as:
+
+* TypeScript/type checking
+* build
+* other project-defined verification scripts
+
+If application or build verification fails, WebMCPify can restore the affected source files.
+
+---
+
+### Test
+
+Testing uses an isolated browser agent.
+
+The testing agent is intentionally source-blind.
+
+It should interact with the live application through:
+
+* browser interaction
+* Chrome DevTools MCP
+* WebMCP tools exposed by the application
+
+It should not inspect the target application's source files.
+
+The agent receives the approved task list and attempts every task.
+
+The agent's own statement that a task succeeded is **not** considered evidence.
+
+---
+
+### Independent Evaluation
+
+After the agent finishes, WebMCPify evaluates every task's `verify` expression against the live application.
+
+For example:
+
+```javascript
+(() => {
+  try {
+    const data = JSON.parse(
+      localStorage.getItem('webmcp-coffee-store') || '{}'
+    );
+
+    return data?.state?.cart?.['ethiopia-guji'] === 2;
+  } catch {
+    return false;
+  }
+})()
+```
+
+The evaluator therefore asks:
+
+> Did the application actually reach the expected state?
+
+rather than:
+
+> Did the agent say it succeeded?
+
+---
+
+# 2. Reference Application
+
+The primary reference application used during development and testing is:
+
+* [jillesme/webmcp-coffee-store](https://github.com/jillesme/webmcp-coffee-store)
+
+The application is a small React/Vite coffee store with:
+
+* product catalog
+* Zustand state
+* shopping cart
+* authentication state
+* checkout
+* roast filtering
+* existing WebMCP integration signals
+
+It is intentionally small enough to make the resulting WebMCP behaviour observable while still containing meaningful application state and conditional behaviour.
+
+---
+
+# 3. Dependencies
+
+## Required
+
+* Node.js
+* pnpm
+* Chrome/Chromium
+* a supported coding-agent CLI
+* Chrome DevTools MCP for browser-agent testing
+
+Supported coding-agent providers:
+
+* Gemini
+* Claude Code
+* Codex
+* Antigravity (`agy`)
+
+The primary end-to-end provider used for the reference evaluation was **Antigravity**.
+
+Claude Code and Codex were not completed as equivalent end-to-end test runs for this submission and should not be represented as tested results.
+
+---
+
+## Optional
+
+Temporal is only required for the durable repair path.
+
+The Temporal implementation uses:
+
+* Temporal CLI
+* `@temporalio/client`
+* `@temporalio/worker`
+* `@temporalio/workflow`
+
+Temporal is not required for:
+
+* discovery
+* generation
+* human review
+* apply
+* baseline
+* normal test
+* normal evaluation
+* plain repair
+
+---
+
+# 4. External Tools and Projects
+
+WebMCPify uses or integrates with the following external projects.
+
+## WebMCP
+
+WebMCP is the browser API that allows web applications to expose tools to AI agents.
+
+Repository/spec:
+
+* [WebMCP](https://github.com/webmachinelearning/webmcp)
+
+Specification:
+
+* [WebMCP specification](https://webmachinelearning.github.io/webmcp/)
+
+---
+
+## Chrome DevTools MCP
+
+Chrome DevTools MCP provides browser and Chrome DevTools capabilities to coding agents through MCP.
+
+Repository:
+
+* [ChromeDevTools/chrome-devtools-mcp](https://github.com/ChromeDevTools/chrome-devtools-mcp)
+
+The official project provides an MCP server that can be configured with `npx` and supports connection to an existing Chrome instance through `--browser-url` or `--autoConnect`.
+
+---
+
+## use-webmcp-tool
+
+The reference application uses the React WebMCP helper:
+
+* [GoogleChromeLabs/use-webmcp-tool](https://github.com/GoogleChromeLabs/use-webmcp-tool)
+
+This provides a React hook for lifecycle-managed WebMCP tool registration.
+
+---
+
+## Temporal
+
+Temporal is used for the optional durable repair workflow.
+
+Repositories:
+
+* [Temporal](https://github.com/temporalio/temporal)
+* [Temporal TypeScript SDK](https://github.com/temporalio/sdk-typescript)
+* [Temporal TypeScript samples](https://github.com/temporalio/samples-typescript)
+
+The TypeScript SDK provides the client, workflow, worker, and activity APIs used by the durable repair implementation.
+
+---
+
+## Reference Coffee Store
+
+* [jillesme/webmcp-coffee-store](https://github.com/jillesme/webmcp-coffee-store)
+
+This is the main reference/test application used by the project.
+
+---
+
+# 5. Installation
+
+Clone WebMCPify and install its dependencies:
 
 ```bash
+git clone <WEBMCPIFY_REPOSITORY>
+cd WebMCPify
+
 pnpm install
 pnpm build
 ```
 
-Provider and executable overrides can be placed in `.env`; use [`.env.example`](.env.example) as the template. The CLI also accepts `--provider gemini|claude|codex|antigravity`.
+The CLI is then available through:
 
-Core results (`baseline`, `test`, `eval`, and plain `repair`) require no
-Temporal setup. Temporal is optional and can be enabled per project with
-`init --with-temporal`; the setting is stored in the target site's
-`.webmcpify/config.json`.
+```bash
+node dist/cli.js
+```
 
-## Reproduction guide
+During local development, the equivalent `pnpm webmcpify ...` commands can be used.
 
-Start the target site separately and note its URL. The independent scorer
-connects to the running Chrome instance over CDP, so Chrome must be started
-with WebMCP enabled and remote debugging available. For example:
+---
+
+# 6. Antigravity Setup
+
+The primary end-to-end testing environment for this submission is Antigravity.
+
+Before running the browser-agent tests, Chrome DevTools MCP must be available to Antigravity.
+
+## 6.1 Install Chrome DevTools MCP
+
+Chrome DevTools MCP can be run through `npx`:
+
+```bash
+npx -y chrome-devtools-mcp@latest
+```
+
+The official project documents this as the standard MCP server installation command.
+
+You do not normally need to globally install the package.
+
+---
+
+## 6.2 Start Chrome for the evaluation
+
+For WebMCP testing, start a dedicated Chrome instance with remote debugging enabled.
+
+Example:
 
 ```bash
 google-chrome \
@@ -48,64 +376,246 @@ google-chrome \
   http://localhost:5173
 ```
 
-The DevTools MCP configuration uses `--category-experimental-webmcp` and `--autoConnect`. If the target does not have `.mcp.json`, `test` and `repair` create `.webmcpify/chrome-devtools-mcp.json` without replacing an existing configuration.
+Using a separate user-data directory is recommended so that the evaluation browser is isolated from the normal Chrome profile.
 
-The scorer uses `http://127.0.0.1:9222` by default. Set
-`WEBMCPIFY_CDP_URL` if Chrome is listening on another CDP endpoint.
-
-### Project-local tasks
-
-Tasks are generated for the target project, not bundled with WebMCPify. The
-generation agent proposes 5-6 realistic tasks from the site's discovered
-actions. Each task includes a JavaScript `verify` expression that checks the
-real effect in the live page using observable DOM, persisted storage, or the
-site's own state.
-
-The human review page shows each task and its verify expression beside the
-proposed tools. The owner can approve, edit, or reject tasks. Only the
-approved task list is written to `./target-site/tasks.json`, and baseline,
-test, repair, and Temporal scoring all use that same file.
-
-Do not approve a verify expression unless it is correct in the live page. A
-verify expression that accidentally always returns `true` would invalidate the
-evaluation even if the agent failed the task.
-
-### Baseline
-
-Run the one-shot self-verifying baseline after approving a project task list.
-It performs focused discovery, adds or checks WebMCP registrations, and
-attempts the same reviewed tasks. WebMCPify then evaluates each task's verify
-expression independently. The baseline intentionally has source-editing
-access and is the comparison point for the isolated workflow.
+Verify that Chrome is listening:
 
 ```bash
-node dist/cli.js baseline \
-  --path ./target-site \
-  --url http://localhost:5173 \
-  --provider antigravity
+curl http://127.0.0.1:9222/json/version
 ```
 
-The raw session is saved to a timestamped `trajectories/baseline-*.json` file,
-with a matching `.meta.json` sidecar and a structured
-`baseline-eval-*.json` artifact. The original `baseline.json` remains as the
-historical reference run.
+A successful response should contain Chrome/DevTools information.
 
-### Generate, review, test, repair, and evaluate
+---
 
-Generation first performs structured, domain-agnostic discovery and saves it
-to `./target-site/.webmcpify/discovery.json`. Run discovery independently with:
+# 7. Add Chrome DevTools MCP to Antigravity
+
+Open the Antigravity MCP configuration.
+
+Add:
+
+```json
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--browser-url=http://127.0.0.1:9222"
+      ]
+    }
+  }
+}
+```
+
+The Chrome DevTools MCP project documents this `--browser-url` pattern for connecting Antigravity to a Chrome instance running on port 9222.
+
+Save the configuration and restart/reload Antigravity if required.
+
+---
+
+# 8. Verify MCP in Antigravity
+
+Inside Antigravity run:
+
+```text
+/mcp
+```
+
+The Chrome DevTools MCP server should appear as connected.
+
+The important expected result is that Antigravity can see the `chrome-devtools` MCP server and its browser tools.
+
+If it does not appear:
+
+1. verify Chrome is running;
+2. verify port 9222 is reachable;
+3. verify the MCP configuration is valid;
+4. verify `npx -y chrome-devtools-mcp@latest` runs successfully;
+5. reload/restart Antigravity;
+6. run `/mcp` again.
+
+Chrome DevTools MCP also recommends running the server directly with:
 
 ```bash
-node dist/cli.js discover --path ./target-site
+npx chrome-devtools-mcp@latest --help
 ```
 
-The generation response must include a validated structured tool proposal. On
-success it is saved to `./target-site/.webmcpify/proposed-tools.json`; malformed,
-duplicate, or discovery-unsupported proposals fail generation before a source
-patch is created.
+when troubleshooting installation or startup issues.
 
-Generation is a draft-only, read-only step. It proposes both WebMCP changes
-and a project-local task list. Choose `auto`, `declarative`, or `imperative`:
+---
+
+# 9. Test Projects
+
+All WebMCPify evaluation projects should live together under one test directory.
+
+Recommended layout:
+
+```text
+~/Desktop/WebMCPify-tests/
+├── project-1/
+├── project-2/
+└── project-3/
+```
+
+Each project should be independently runnable.
+
+For the reference submission, the projects used for testing should remain together so that the evaluator can reproduce the experiments without searching across unrelated directories.
+
+Each project should contain its own:
+
+```text
+.webmcpify/
+tasks.json
+package.json
+```
+
+when applicable.
+
+Do not merge the applications into WebMCPify itself.
+
+WebMCPify is the evaluation/orchestration project; the applications are separate target projects.
+
+---
+
+# 10. Packaging the Test Projects
+
+After preparing the three test projects, package them together:
+
+```bash
+cd ~/Desktop
+
+zip -r WebMCPify-test-projects.zip WebMCPify-tests/
+```
+
+The resulting archive should contain:
+
+```text
+WebMCPify-tests/
+├── project-1/
+├── project-2/
+└── project-3/
+```
+
+The archive is intended to make the target applications reproducible without modifying the WebMCPify source repository.
+
+---
+
+# 11. Project-Local Tasks
+
+Tasks belong to the target application.
+
+They are not hard-coded globally into WebMCPify.
+
+Generation proposes 5–6 realistic tasks based on the application's discovered capabilities.
+
+Every task must contain:
+
+```json
+{
+  "id": "stable-task-id",
+  "description": "What the agent should do",
+  "verify": "JavaScript expression returning true or false"
+}
+```
+
+The verifier must be based on observable application state.
+
+Acceptable evidence includes:
+
+* persisted localStorage state
+* DOM state
+* application state exposed to the page
+* WebMCP tool availability
+* other observable effects
+
+Do not use an agent's textual response as the verification source.
+
+---
+
+# 12. The `tasks.json` Contract
+
+The final evaluation requires the approved task set.
+
+The target project must contain:
+
+```text
+tasks.json
+```
+
+with **5–6 approved tasks**.
+
+A task list containing zero tasks is invalid.
+
+The approval flow must therefore guarantee that the approved task definitions are persisted before the final evaluation begins.
+
+Expected example:
+
+```text
+[final-eval] fixed approved task set: <run-id> (6 tasks)
+```
+
+If the approval page shows the tasks but `tasks.json` is empty or missing, do not continue to evaluation.
+
+Fix the approval persistence problem first.
+
+---
+
+# 13. Human Approval
+
+The approval interface is intentionally a hard gate.
+
+The workflow is:
+
+```text
+generate
+   ↓
+approval page
+   ↓
+inspect tools
+   ↓
+inspect tasks
+   ↓
+inspect verify expressions
+   ↓
+inspect source patch
+   ↓
+approve
+   ↓
+persist manifest + tasks.json
+```
+
+The reviewer should not need to repeatedly approve the same draft.
+
+The intended interaction is:
+
+1. Open the review page.
+2. Inspect the draft.
+3. Click the approval control.
+4. The first click enters/activates the approval action if the UI requires confirmation.
+5. The second click confirms approval.
+6. After approval succeeds, the review becomes closed/read-only.
+7. Further clicks must not re-apply or re-approve the same draft.
+
+The approval endpoint must be idempotent.
+
+Closing the browser after approval must not cause the CLI to remain indefinitely waiting for another approval.
+
+The CLI should continue once the approved manifest and `tasks.json` have been written.
+
+---
+
+# 14. Generate
+
+Run:
+
+```bash
+node dist/cli.js discover \
+  --path ./target-site
+```
+
+Then:
 
 ```bash
 node dist/cli.js generate \
@@ -114,54 +624,267 @@ node dist/cli.js generate \
   --provider antigravity
 ```
 
-Before drafting, the agent performs focused discovery rather than reading the
-whole repository file by file. It identifies:
+Generation should produce:
 
-- the language, framework, versions, and stated purpose from project metadata
-  and the README;
-- sitemap/robots information and the real route or page structure;
-- interactive elements, event handlers, API/server handlers, and the state
-  sources those actions actually use; and
-- preconditions such as authentication, feature flags, or a non-empty cart.
-
-It reports these findings before the proposed diff. The placement guidance
-keeps imperative registrations in the existing integration structure and
-requires them to be imported and wired into an app-load or route-load path.
-Declarative registrations are placed directly in the existing component that
-renders the relevant form or input. Each tool must identify its edited or
-created file, why that location fits, and where it is wired at runtime.
-
-Generation does not edit the target site or verify the result. The raw draft
-trajectory is saved to a timestamped `trajectories/generate-*.json` file with a
-metadata sidecar. It contains the discovery report, proposed diff,
-placement/wiring summary, and task JSON. Review selects the latest generation
-trajectory, validates the task definitions, and records the approval decision
-rather than applying source changes automatically.
-
-Review the draft in the local approval page:
-
-```bash
-node dist/cli.js review --path ./target-site
+```text
+target-site/.webmcpify/discovery.json
+target-site/.webmcpify/proposed-tools.json
+target-site/.webmcpify/pending-diff.patch
 ```
 
-Open the printed localhost URL and approve only the tools, verify expressions,
-and exact source patch you inspected. The tool manifest is saved to
-`./target-site/.webmcpify/approved-tools.json`, the approved task list is
-saved to `./target-site/tasks.json`, and the source decision is tied to the
-patch run ID.
+and a generation trajectory.
 
-Apply the approved source changes from the target project:
+Generation should not directly edit the target source.
+
+---
+
+# 15. Review
+
+Run:
 
 ```bash
-node dist/cli.js apply --path ./target-site
+node dist/cli.js review \
+  --path ./target-site
 ```
 
-`apply` checks the approval and recorded Git source fingerprint, validates and
-applies `.webmcpify/pending-diff.patch`, runs available `typecheck` and
-`build` scripts, and restores the changed files if application or build
-verification fails. Its result is recorded as an `apply-*` trajectory artifact.
+Open the URL printed by the CLI.
 
-Then run the isolated audit and independent score:
+The reviewer should inspect:
+
+* all proposed tools
+* tool parameters
+* handler/state mappings
+* source placement
+* verification tasks
+* verify expressions
+* exact source patch
+
+Then approve the draft.
+
+After approval verify:
+
+```bash
+test -f ./target-site/tasks.json
+test -f ./target-site/.webmcpify/approved-tools.json
+```
+
+Then inspect the task count:
+
+```bash
+node -e "
+const tasks = require('./target-site/tasks.json');
+console.log('tasks:', Array.isArray(tasks) ? tasks.length : 0);
+"
+```
+
+The expected result is:
+
+```text
+tasks: 5
+```
+
+or:
+
+```text
+tasks: 6
+```
+
+---
+
+# 16. Apply
+
+Only after approval:
+
+```bash
+node dist/cli.js apply \
+  --path ./target-site
+```
+
+The apply stage validates the approval and applies the approved patch.
+
+After applying, rebuild the target:
+
+```bash
+pnpm build
+```
+
+or use the target project's appropriate build command.
+
+---
+
+# 17. Run the Target Application
+
+Start the target application.
+
+For the coffee store:
+
+```bash
+pnpm dev
+```
+
+Then open:
+
+```text
+http://localhost:5173
+```
+
+The actual URL may differ for another target project.
+
+---
+
+# 18. Test with Antigravity
+
+Start the target application first.
+
+Start Chrome with WebMCP and remote debugging enabled.
+
+Ensure Chrome DevTools MCP appears in:
+
+```text
+/mcp
+```
+
+Then run:
+
+```bash
+node dist/cli.js test \
+  --path ./target-site \
+  --url http://localhost:5173 \
+  --provider antigravity
+```
+
+The test agent receives only the approved task set and browser/MCP access.
+
+It should not read or modify the target application's source.
+
+The raw trajectory is stored as:
+
+```text
+trajectories/test-*.json
+```
+
+The independent task evaluation is stored separately.
+
+---
+
+# 19. Evaluation
+
+After the test session:
+
+```bash
+node dist/cli.js eval
+```
+
+The evaluator checks the saved task definitions against the live application.
+
+A successful task requires its `verify` expression to return:
+
+```text
+true
+```
+
+The agent's textual claim is not enough.
+
+---
+
+# 20. Example Coffee Store Tasks
+
+The reference coffee-store evaluation contains tasks such as:
+
+### Add coffee
+
+```text
+Add 2 bags of Guji Shakiso to the shopping cart.
+```
+
+Verification:
+
+```javascript
+(() => {
+  try {
+    const data = JSON.parse(
+      localStorage.getItem('webmcp-coffee-store') || '{}'
+    );
+
+    return data?.state?.cart?.['ethiopia-guji'] === 2;
+  } catch {
+    return false;
+  }
+})()
+```
+
+### Update quantity
+
+```text
+Update the quantity of Guji Shakiso to 4 bags.
+```
+
+### Remove coffee
+
+```text
+Remove Guji Shakiso from the cart.
+```
+
+### Login
+
+```text
+Log into the store demo account.
+```
+
+### Checkout
+
+```text
+Checkout the order while logged in.
+```
+
+### Conditional tool availability
+
+```text
+Verify that checkout is only registered when the user is logged in.
+```
+
+The conditional task checks the live WebMCP tool registry rather than relying only on source inspection.
+
+---
+
+# 21. Baseline
+
+The baseline is the comparison condition.
+
+Run:
+
+```bash
+node dist/cli.js baseline \
+  --path ./target-site \
+  --url http://localhost:5173 \
+  --provider antigravity
+```
+
+The baseline agent has source-editing access.
+
+This is intentionally different from the isolated test agent.
+
+The baseline measures what an agent can accomplish when it is allowed to inspect and modify the application.
+
+The isolated test measures what the agent can accomplish through the browser and approved WebMCP tools.
+
+---
+
+# 22. Repair
+
+Plain repair:
+
+```bash
+node dist/cli.js repair \
+  --path ./target-site \
+  --provider antigravity
+```
+
+Repair uses independent test failures to identify the failed tasks and generate a focused repair.
+
+Repair has source-editing access because its purpose is to correct the implementation.
+
+After repair:
 
 ```bash
 node dist/cli.js test \
@@ -172,53 +895,42 @@ node dist/cli.js test \
 node dist/cli.js eval
 ```
 
-The isolated agent has MCP browser access only; it cannot read or edit the
-site's source files. It receives the approved task list and must attempt every
-task using only the live browser and approved WebMCP tools. Its trajectory is
-saved to a timestamped `trajectories/test-*.json` file; the independent result
-is saved to a linked `trajectories/test-eval-*.json` artifact. The scorer
-evaluates every approved verify expression in the live page after the agent
-session and does not trust the agent's success claims.
+The important evidence is the independent score after the repair, not the repair agent's statement that it fixed the problem.
 
-For a plain repair, use the latest independent failures:
+---
+
+# 23. Optional Temporal Repair
+
+Temporal is used only for durable repair orchestration.
+
+Initialize:
 
 ```bash
-node dist/cli.js repair \
+node dist/cli.js init \
+  --path ./target-site
+```
+
+Or enable Temporal:
+
+```bash
+node dist/cli.js init \
   --path ./target-site \
-  --provider antigravity
+  --with-temporal
 ```
 
-The plain repair path gives the agent source-editing and browser access for a
-focused repair pass based on failed task IDs and verify details. Its raw output
-and failure context are saved to a timestamped `trajectories/repair-*.json`
-file. Run `test` again for an independent score.
-
-## Optional durable repair with Temporal
-
-Choose the repair mode for the project. The first command is the safe default;
-the second opts this project into durable repair:
+Start Temporal:
 
 ```bash
-node dist/cli.js init --path ./target-site
-node dist/cli.js init --path ./target-site --with-temporal
-```
-
-Install the Temporal CLI and start its local development server:
-
-```bash
-temporal --version   # expected: 1.8.1
 temporal server start-dev
 ```
 
-In a second terminal, run the compiled worker:
+Start the WebMCPify Temporal worker:
 
 ```bash
 node dist/temporal/worker.js
 ```
 
-In a third terminal, start a durable repair workflow. With the project setting
-enabled, `repair` uses Temporal without needing the flag every time. The task
-must match one of the approved task IDs from `tasks.json`, such as `task-1`:
+Then:
 
 ```bash
 node dist/cli.js repair \
@@ -228,90 +940,610 @@ node dist/cli.js repair \
   --provider antigravity
 ```
 
-The workflow runs the existing independent scorer, drafts a focused repair,
-pauses at the existing review page, and persists its retry state. Per-run
-overrides always win over project configuration:
+The durable workflow preserves retry state and human-gate state.
 
-```bash
-node dist/cli.js repair ... --durable
-node dist/cli.js repair ... --no-durable
-```
+The current durable implementation intentionally keeps source-diff application as a separate boundary.
 
-The precedence is explicit CLI flag, `WEBMCPIFY_DURABLE`, project config, then
-plain repair by default. The plain repair path remains available and does not
-require Temporal.
+---
 
-The current durable path reuses the project task list, draft generator, review
-manifest, and independent verify expressions. It does not yet automatically
-apply an approved source diff. That application step remains a separate
-implementation boundary, so inspect and apply the approved change before
-expecting the next test to observe a code repair.
+# 24. Trajectories
 
-To demonstrate durability, stop the worker while the workflow is waiting on an activity, restart it with `node dist/temporal/worker.js`, and inspect the resumed workflow in the Temporal UI at `http://localhost:8233`. A real resume claim should be recorded in the changelog only after observing the event history.
+Every important agent execution should leave evidence.
 
-## Architecture
+Examples:
 
 ```text
-discover (stack, routes, actions, handlers, state)
-        ↓
-generate (read-only agent draft)
-        ↓
-review (human approval manifest)
-        ↓
-test (isolated agent + independent browser score)
-        ↓
-repair (plain by default, Temporal by config or --durable)
-        ↺
+trajectories/
+├── generate-*.json
+├── generate-*.meta.json
+├── baseline-*.json
+├── baseline-*.meta.json
+├── test-*.json
+├── test-*.meta.json
+├── test-eval-*.json
+├── repair-*.json
+└── ...
 ```
 
-The Temporal files are intentionally thin wrappers around existing commands and scoring logic:
+The trajectory should preserve the raw provider output rather than replacing it with a summary.
 
-- `src/temporal/activities.ts` delegates to generation, review, and `scoreTasks`.
-- `src/temporal/workflows.ts` owns the retry/repair loop and human gate.
-- `src/temporal/worker.ts` registers the activities and workflow on task queue `webmcpify`.
+Metadata should identify:
 
-## Trajectories and evidence
+* provider
+* model/agent
+* prompt
+* target project
+* URL
+* MCP configuration
+* timing
+* status
+* relevant feedback
 
-Every agent run preserves the provider's raw JSON output instead of replacing
-the previous run. The matching metadata sidecar records the exact prompt,
-provider, target path or URL, allowed tools, MCP configuration, timing, status,
-and relevant feedback. Structured artifacts record independent scores, human
-review decisions, and Temporal attempt/workflow checkpoints.
+This allows the evaluation to be audited after the run.
 
-See [`trajectories/README.md`](trajectories/README.md) for the artifact types
-and the automatically maintained run index. This makes it possible to follow
-the evidence from discovery and agent actions through review, scoring,
-feedback, retries, and repair without relying only on a final summary.
+---
 
-## Current feature boundaries
+# 25. Changelog
 
-The core pipeline is implemented, but these boundaries are important when
-interpreting the results:
+All meaningful milestones should be recorded in:
 
-- `generate` is read-only and saves the agent's draft trajectory; it does not
-  modify source, but it writes the extracted pending patch and metadata under
-  the target project's `.webmcpify` directory.
-- `review` records approved tool names and approved task definitions for the
-  isolated test, writes `tasks.json`, and requires explicit approval of the
-  exact source patch.
-- `apply` requires that source approval, uses Git for validation and rollback,
-  and runs available project build/typecheck scripts before reporting success.
-- `test` is source-blind and MCP-only; the scorer evaluates the approved task
-  expressions, but the expressions themselves still require careful human
-  review because they run in the live page.
-- `eval` reports the latest saved task score; it does not yet check rejected
-  tool reachability or compare multiple task catalogs.
-- Temporal is durable only for the repair orchestration. It retries activities
-  and preserves workflow state, but the source-diff application boundary still
-  needs to be completed for fully automatic durable repair.
+```text
+CHANGELOG.md
+```
 
-## Evidence and attribution
+Examples include:
 
-`trajectories/baseline.json` preserves the first self-verifying agent run, and
-new runs use the timestamped format described above. Independent scores are
-stored separately so an agent cannot make its own claims the evaluation.
-Cross-provider pass-rate comparisons and the Temporal worker-kill demonstration
-should be added to [`CHANGELOG.md`](CHANGELOG.md) only after those runs are
-actually performed.
+* discovery implementation
+* structured proposal validation
+* human approval workflow
+* task persistence
+* patch generation
+* patch application
+* isolated testing
+* independent evaluation
+* repair
+* Temporal integration
+* approval UI fixes
+* reproducibility fixes
+* actual provider test results
 
-WebMCPify is an integration project; WebMCP, Chrome DevTools MCP, Temporal, the provider CLIs, and the coffee-store application are existing tools or source projects.
+Do not claim a provider was tested unless the run was actually completed.
+
+For this submission, the README and changelog should explicitly distinguish:
+
+```text
+Antigravity — end-to-end tested
+Claude Code — not completed end-to-end
+Codex — not completed end-to-end
+```
+
+---
+
+# 26. Three-Project Test Matrix
+
+The final reproducibility package should contain three target applications:
+
+```text
+WebMCPify-tests/
+├── project-1/
+├── project-2/
+└── project-3/
+```
+
+For every project, record:
+
+| Project   | Discovery | Generate | Review | Apply | Test | Eval | Provider    |
+| --------- | --------: | -------: | -----: | ----: | ---: | ---: | ----------- |
+| Project 1 |         ✓ |        ✓ |      ✓ |     ✓ |    ✓ |    ✓ | Antigravity |
+| Project 2 |         ✓ |        ✓ |      ✓ |     ✓ |    ✓ |    ✓ | Antigravity |
+| Project 3 |         ✓ |        ✓ |      ✓ |     ✓ |    ✓ |    ✓ | Antigravity |
+
+Only mark a cell `✓` after the corresponding stage has actually been completed.
+
+If a stage was not completed, record:
+
+```text
+Not run
+```
+
+rather than inferring a result.
+
+---
+
+# 27. Full Reproduction Sequence
+
+A clean reproduction should follow this order.
+
+## Step 1 — Install WebMCPify
+
+```bash
+pnpm install
+pnpm build
+```
+
+## Step 2 — Install/verify Chrome DevTools MCP
+
+```bash
+npx -y chrome-devtools-mcp@latest
+```
+
+## Step 3 — Configure Antigravity MCP
+
+Add:
+
+```json
+{
+  "mcpServers": {
+    "chrome-devtools": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "chrome-devtools-mcp@latest",
+        "--browser-url=http://127.0.0.1:9222"
+      ]
+    }
+  }
+}
+```
+
+## Step 4 — Verify Antigravity
+
+Run:
+
+```text
+/mcp
+```
+
+Confirm `chrome-devtools` is connected.
+
+## Step 5 — Start Chrome
+
+```bash
+google-chrome \
+  --remote-debugging-port=9222 \
+  --enable-features=WebMCP \
+  --user-data-dir=/tmp/webmcpify-chrome
+```
+
+## Step 6 — Start the target application
+
+```bash
+pnpm dev
+```
+
+## Step 7 — Discover
+
+```bash
+node dist/cli.js discover \
+  --path ./target-site
+```
+
+## Step 8 — Generate
+
+```bash
+node dist/cli.js generate \
+  --path ./target-site \
+  --method auto \
+  --provider antigravity
+```
+
+## Step 9 — Review
+
+```bash
+node dist/cli.js review \
+  --path ./target-site
+```
+
+Open the approval URL.
+
+Inspect:
+
+* tools
+* tasks
+* verification expressions
+* source patch
+
+Approve once the complete draft is correct.
+
+## Step 10 — Confirm tasks
+
+```bash
+cat ./target-site/tasks.json
+```
+
+Confirm that there are 5–6 tasks.
+
+## Step 11 — Apply
+
+```bash
+node dist/cli.js apply \
+  --path ./target-site
+```
+
+## Step 12 — Restart/rebuild target
+
+```bash
+pnpm build
+pnpm dev
+```
+
+## Step 13 — Test
+
+```bash
+node dist/cli.js test \
+  --path ./target-site \
+  --url http://localhost:5173 \
+  --provider antigravity
+```
+
+## Step 14 — Evaluate
+
+```bash
+node dist/cli.js eval
+```
+
+## Step 15 — Preserve evidence
+
+Keep:
+
+```text
+trajectories/
+tasks.json
+.webmcpify/
+CHANGELOG.md
+```
+
+Do not delete successful or failed trajectories before final submission.
+
+---
+
+# 28. Final Verification Checklist
+
+Before considering an evaluation complete, verify all of the following.
+
+### WebMCPify
+
+```bash
+pnpm build
+```
+
+passes.
+
+### Target application
+
+The target application starts successfully.
+
+### Discovery
+
+```text
+.webmcpify/discovery.json
+```
+
+exists.
+
+### Generation
+
+```text
+.webmcpify/proposed-tools.json
+.webmcpify/pending-diff.patch
+```
+
+exist.
+
+### Approval
+
+```text
+.webmcpify/approved-tools.json
+tasks.json
+```
+
+exist.
+
+### Tasks
+
+```text
+tasks.json
+```
+
+contains 5–6 tasks.
+
+Every task has:
+
+* stable ID
+* description
+* observable verification expression
+
+### Source
+
+The approved patch matches the reviewed source changes.
+
+### WebMCP
+
+The expected tools appear in the running browser.
+
+### MCP
+
+Antigravity reports Chrome DevTools MCP through:
+
+```text
+/mcp
+```
+
+### Testing
+
+The agent can interact with the application through the browser.
+
+### Evaluation
+
+The independent verifier evaluates the task effects.
+
+### Evidence
+
+Trajectories are preserved.
+
+### Changelog
+
+Actual implementation and testing milestones are recorded.
+
+### Provider attribution
+
+Only actually completed provider runs are reported as tested.
+
+---
+
+# 29. Known Evaluation Boundary
+
+WebMCPify is intentionally divided into several trust boundaries.
+
+```text
+AI discovery
+     ↓
+AI proposal
+     ↓
+human approval
+     ↓
+source application
+     ↓
+browser agent
+     ↓
+independent verifier
+```
+
+The system does not treat the AI agent as the final authority on whether an application works.
+
+The agent can propose a tool.
+
+The human approves the proposal.
+
+The browser executes it.
+
+The verifier independently checks the result.
+
+This separation is the central design principle of the project.
+
+---
+
+# 30. Current Testing Attribution
+
+The reference end-to-end testing for this submission was performed with:
+
+```text
+Antigravity
+Gemini
+Chrome
+Chrome DevTools MCP
+```
+
+The workflow was exercised through the Antigravity environment because it provided the required browser-agent and MCP workflow within the available testing time.
+
+Equivalent complete end-to-end runs with:
+
+```text
+Claude Code
+Codex
+```
+
+were not completed for this submission.
+
+Therefore this README does not claim cross-provider performance results.
+
+The architecture remains provider-aware and supports:
+
+```text
+gemini
+claude
+codex
+antigravity
+```
+
+but provider support and provider testing are separate claims.
+
+---
+
+# 31. Submission Package
+
+The final submission should contain the WebMCPify source plus the reproducibility material.
+
+Recommended structure:
+
+```text
+submission/
+├── WebMCPify/
+│   ├── src/
+│   ├── scripts/
+│   ├── trajectories/
+│   ├── CHANGELOG.md
+│   ├── README.md
+│   ├── package.json
+│   └── ...
+│
+├── WebMCPify-tests.zip
+│
+└── README.md
+```
+
+The test archive contains:
+
+```text
+WebMCPify-tests/
+├── project-1/
+├── project-2/
+└── project-3/
+```
+
+The projects should be runnable independently.
+
+---
+
+# 32. Final Test Run Used for the Submission
+
+The final test sequence should be executed only after all implementation and approval fixes are complete.
+
+From the WebMCPify directory:
+
+```bash
+pnpm install
+pnpm build
+```
+
+Start Chrome:
+
+```bash
+google-chrome \
+  --remote-debugging-port=9222 \
+  --enable-features=WebMCP \
+  --user-data-dir=/tmp/webmcpify-chrome
+```
+
+Verify CDP:
+
+```bash
+curl http://127.0.0.1:9222/json/version
+```
+
+Verify Chrome DevTools MCP:
+
+```bash
+npx -y chrome-devtools-mcp@latest --help
+```
+
+Verify Antigravity:
+
+```text
+/mcp
+```
+
+Confirm:
+
+```text
+chrome-devtools
+```
+
+is connected.
+
+Start the target project:
+
+```bash
+cd ~/Desktop/WebMCPify-tests/project-1
+pnpm install
+pnpm dev
+```
+
+Then run the WebMCPify pipeline:
+
+```bash
+cd ~/Desktop/WebMCPify
+
+node dist/cli.js discover \
+  --path ~/Desktop/WebMCPify-tests/project-1
+
+node dist/cli.js generate \
+  --path ~/Desktop/WebMCPify-tests/project-1 \
+  --method auto \
+  --provider antigravity
+
+node dist/cli.js review \
+  --path ~/Desktop/WebMCPify-tests/project-1
+```
+
+Inspect and approve the draft.
+
+Immediately verify:
+
+```bash
+cat ~/Desktop/WebMCPify-tests/project-1/tasks.json
+```
+
+Confirm that the file contains exactly 5–6 approved tasks.
+
+Then:
+
+```bash
+node dist/cli.js apply \
+  --path ~/Desktop/WebMCPify-tests/project-1
+```
+
+Run the independent browser test:
+
+```bash
+node dist/cli.js test \
+  --path ~/Desktop/WebMCPify-tests/project-1 \
+  --url http://localhost:5173 \
+  --provider antigravity
+```
+
+Finally:
+
+```bash
+node dist/cli.js eval
+```
+
+Repeat the same validated sequence for:
+
+```text
+project-2
+project-3
+```
+
+Preserve every trajectory and evaluation artifact.
+
+Finally package the projects:
+
+```bash
+cd ~/Desktop
+
+zip -r WebMCPify-test-projects.zip WebMCPify-tests/
+```
+
+Then update:
+
+```text
+CHANGELOG.md
+```
+
+with the actual final results.
+
+Do not add a result to the changelog until the corresponding test has actually been executed and independently scored.
+
+---
+
+# 33. Project Philosophy
+
+WebMCPify is not intended to be a black-box "AI modifies website" system.
+
+It is an evidence-driven integration pipeline.
+
+The important properties are:
+
+1. **Discover before proposing.**
+2. **Ground tools in real application handlers and state.**
+3. **Keep generation separate from source application.**
+4. **Require human approval.**
+5. **Persist the exact approved task set.**
+6. **Give the browser agent only the capabilities it needs.**
+7. **Verify application effects independently.**
+8. **Preserve trajectories and evidence.**
+9. **Record actual testing rather than assumed testing.**
+10. **Make repairs repeatable and auditable.**
+
+That separation is what allows WebMCPify to evaluate whether WebMCP integration actually works instead of merely evaluating whether an AI agent produced plausible code.

@@ -5,7 +5,7 @@ import { readFile } from "node:fs/promises";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import { scoreTasks, type TaskScoreSummary } from "../lib/scoring.js";
-import { loadTasks, taskFingerprint, type Task } from "../lib/tasks.js";
+import { loadApprovedTasks, taskFingerprint, type Task } from "../lib/tasks.js";
 import { writeChromeDevtoolsMcpConfig } from "../lib/mcp-config.js";
 import {
   createTrajectoryArtifact,
@@ -54,7 +54,7 @@ use only the tools listed there. Its contents are:\n${approved}`;
 export async function runTest(opts: TestOptions): Promise<StoredTestEvaluation> {
   const provider = resolveProvider(opts.provider);
   const sitePath = path.resolve(opts.path ?? process.cwd());
-  const tasks = await loadTasks(sitePath);
+  const tasks = await loadApprovedTasks(sitePath);
   const runId = randomUUID();
   const taskSetId = taskFingerprint(tasks);
   const trajectory = createTrajectoryPath("test", "all-tasks");
