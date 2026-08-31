@@ -2,7 +2,8 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
-import { scoreTasks } from "../lib/eval.js";
+import { scoreTasks } from "../lib/scoring.js";
+import { loadTasks } from "../lib/tasks.js";
 import {
   DISCOVERY_GUIDANCE,
   TOOL_PLACEMENT_GUIDANCE,
@@ -40,8 +41,13 @@ export async function runBaseline(opts: {
 }) {
   const provider = resolveProvider(opts.provider);
   const sitePath = path.resolve(opts.path);
+  const tasks = await loadTasks(sitePath);
   const trajectoryPath = createTrajectoryPath("baseline");
   const mcpConfigPath = path.join(sitePath, ".mcp.json");
+  const taskContext = `Use these reviewed project tasks as the fixed evaluation
+cases. Attempt them through the site's real UI or WebMCP tools, and report the
+observed result for each:
+${JSON.stringify(tasks, null, 2)}`;
 
   console.log(
     `[baseline] running one-shot self-verifying ${provider} session...`
@@ -49,7 +55,7 @@ export async function runBaseline(opts: {
 
   await runAgent({
     provider,
-    prompt: AUDIT_PROMPT,
+    prompt: `${AUDIT_PROMPT}\n\n${taskContext}`,
     cwd: sitePath,
     allowedTools: "Read,Edit,Bash,mcp__chrome-devtools__*",
     mcpConfig: existsSync(mcpConfigPath) ? mcpConfigPath : undefined,
@@ -58,16 +64,18 @@ export async function runBaseline(opts: {
       role: "baseline",
       sitePath,
       url: opts.url,
+      tasksPath: path.join(sitePath, "tasks.json"),
+      taskCount: tasks.length,
     },
   });
 
   console.log(`[baseline] session complete, saved to ${trajectoryPath}`);
   console.log("[baseline] running independent eval check against live site...");
 
-  const scores = await scoreTasks(opts.url);
+  const scores = await scoreTasks(opts.url, tasks);
   const evaluationPath = await createTrajectoryArtifact(
     "baseline-eval",
-    scores,
+    { tasks, scores },
     {
       provider,
       url: opts.url,

@@ -4,6 +4,7 @@ import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import {
   DISCOVERY_GUIDANCE,
+  TASK_AUTHORING_PROMPT,
   TOOL_PLACEMENT_GUIDANCE,
 } from "../lib/prompts.js";
 import { createTrajectoryPath } from "../lib/trajectories.js";
@@ -19,6 +20,8 @@ placement/wiring summary for each tool. Use explicit file paths in the diff.
 Do not deploy or verify — that happens in a separate step.
 
 ${TOOL_PLACEMENT_GUIDANCE}
+
+${TASK_AUTHORING_PROMPT}
 `.trim();
 
 export const GENERATION_METHODS = [

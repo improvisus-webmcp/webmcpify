@@ -3,7 +3,8 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
-import { scoreTasks, type ScoreSummary } from "../lib/eval.js";
+import { scoreTasks, type TaskScoreSummary } from "../lib/scoring.js";
+import { loadTasks, type Task } from "../lib/tasks.js";
 import { writeChromeDevtoolsMcpConfig } from "../lib/mcp-config.js";
 import {
   createTrajectoryArtifact,
@@ -23,7 +24,8 @@ export interface StoredTestEvaluation {
   provider: string;
   url: string;
   recordedAt: string;
-  scores: ScoreSummary;
+  tasks: Task[];
+  scores: TaskScoreSummary;
 }
 
 async function readApprovalContext(sitePath: string): Promise<string> {
@@ -47,6 +49,7 @@ use only the tools listed there. Its contents are:\n${approved}`;
 export async function runTest(opts: TestOptions): Promise<StoredTestEvaluation> {
   const provider = resolveProvider(opts.provider);
   const sitePath = path.resolve(opts.path ?? process.cwd());
+  const tasks = await loadTasks(sitePath);
   const trajectory = createTrajectoryPath("test", "all-tasks");
   const approvalPath = path.join(
     sitePath,
@@ -76,6 +79,10 @@ not expose.
 
 ${approvalContext}
 
+The reviewed task list for this run is:
+${JSON.stringify(tasks, null, 2)}
+Attempt every task using only the live browser and approved WebMCP tools.
+
 Report each check as pass or fail, include observed details, and do not claim a
 pass from assumptions or from merely inspecting source code.`;
 
@@ -98,12 +105,13 @@ pass from assumptions or from merely inspecting source code.`;
   });
 
   console.log("[test] agent session complete; running independent evaluator...");
-  const scores = await scoreTasks(opts.url);
+  const scores = await scoreTasks(opts.url, tasks);
   const evaluation: StoredTestEvaluation = {
     version: TEST_EVALUATION_VERSION,
     provider,
     url: opts.url,
     recordedAt: new Date().toISOString(),
+    tasks,
     scores,
   };
 

@@ -31,7 +31,7 @@ export async function repairWorkflow(
   }
 
   for (let attempt = 0; attempt <= maxRepairs; attempt++) {
-    const result = await testActivity(opts.url, opts.task, attempt);
+    const result = await testActivity(opts.path, opts.url, opts.task, attempt);
     if (result.passed) {
       return { passed: true, attempts: attempt, task: opts.task };
     }

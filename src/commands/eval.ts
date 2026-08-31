@@ -32,9 +32,13 @@ export async function runEval() {
     `[eval] ${evaluation.scores.passed}/${evaluation.scores.total} tasks passed ` +
       `(provider: ${evaluation.provider}, url: ${evaluation.url})`
   );
-  for (const task of evaluation.scores.tasks) {
-    const detail = task.detail ? ` — ${task.detail}` : "";
-    console.log(`  [${displaySymbol(task.passed)}] ${task.name}${detail}`);
+  for (const result of evaluation.scores.results) {
+    const task = evaluation.tasks.find((candidate) => candidate.id === result.task);
+    const description = task ? ` — ${task.description}` : "";
+    const detail = result.detail ? ` (${result.detail})` : "";
+    console.log(
+      `  [${displaySymbol(result.passed)}] ${result.task}${description}${detail}`
+    );
   }
 
   return evaluation;

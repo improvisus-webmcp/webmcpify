@@ -14,6 +14,7 @@ import {
   createTrajectoryPath,
   latestTrajectoryPath,
 } from "../lib/trajectories.js";
+import type { TaskResult } from "../lib/scoring.js";
 import type { StoredTestEvaluation } from "./test.js";
 
 export interface RepairOptions {
@@ -58,7 +59,7 @@ async function runPlainRepair(opts: RepairOptions): Promise<void> {
     evaluation,
     path: evaluationPath,
   } = await readLastEvaluation();
-  const failedTasks = evaluation.scores.tasks.filter((task) => !task.passed);
+  const failedTasks = evaluation.scores.results.filter((task) => !task.passed);
 
   if (failedTasks.length === 0) {
     throw new Error("The last test passed every task; there is nothing to repair.");
@@ -69,8 +70,8 @@ async function runPlainRepair(opts: RepairOptions): Promise<void> {
   const repairTrajectory = createTrajectoryPath("repair");
   const failures = failedTasks
     .map(
-      (task) =>
-        `- ${task.name}: ${task.detail ?? "failed without additional detail"}`
+      (task: TaskResult) =>
+        `- ${task.task}: ${task.detail ?? "failed without additional detail"}`
     )
     .join("\n");
 

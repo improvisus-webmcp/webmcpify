@@ -3,7 +3,8 @@ import {
   runReviewPrompt,
   type ReviewResult,
 } from "../commands/review.js";
-import { scoreTasks } from "../lib/eval.js";
+import { scoreTasks } from "../lib/scoring.js";
+import { loadTasks } from "../lib/tasks.js";
 import { createTrajectoryArtifact } from "../lib/trajectories.js";
 
 export interface ActivityTaskResult {
@@ -30,24 +31,26 @@ export async function generateActivity(
   });
 }
 
-/** Score one of the existing independent browser tasks. */
+/** Score one approved project task through the independent browser scorer. */
 export async function testActivity(
+  sitePath: string,
   url: string,
   task: string,
   attempt?: number
 ): Promise<ActivityTaskResult> {
-  const { tasks } = await scoreTasks(url);
-  const result = tasks.find((candidate) => candidate.name === task);
+  const tasks = await loadTasks(sitePath);
+  const { results } = await scoreTasks(url, tasks);
+  const result = results.find((candidate) => candidate.task === task);
   if (!result) {
     throw new Error(
       `Unknown scoring task "${task}". Available tasks: ${tasks
-        .map((candidate) => candidate.name)
+        .map((candidate) => candidate.id)
         .join(", ")}`
     );
   }
 
   const taskResult = {
-    task: result.name,
+    task: result.task,
     passed: result.passed,
     detail: result.detail,
   };
@@ -62,6 +65,7 @@ export async function testActivity(
       url,
       task,
       attempt,
+      tasksPath: `${sitePath}/tasks.json`,
       durable: true,
     }
   );

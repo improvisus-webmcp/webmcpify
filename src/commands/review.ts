@@ -6,6 +6,14 @@ import {
   createTrajectoryArtifact,
   latestTrajectoryPath,
 } from "../lib/trajectories.js";
+import {
+  extractTasksFromText,
+  loadTasksIfPresent,
+  parseTasksJson,
+  tasksPath,
+  writeTasks,
+  type Task,
+} from "../lib/tasks.js";
 
 export interface ReviewOptions {
   port?: string;
@@ -15,6 +23,7 @@ export interface ReviewOptions {
 export interface ReviewResult {
   approved: boolean;
   tools: string[];
+  tasks: Task[];
   approvalPath: string;
   decisionPath?: string;
 }
@@ -91,6 +100,17 @@ function approvedToolNames(requestBody: {
   ];
 }
 
+function approvedTaskIds(requestBody: { taskIds?: unknown }): string[] {
+  const selected = Array.isArray(requestBody.taskIds)
+    ? requestBody.taskIds
+    : typeof requestBody.taskIds === "string"
+      ? [requestBody.taskIds]
+      : [];
+  return [
+    ...new Set(selected.map((value) => String(value).trim()).filter(Boolean)),
+  ];
+}
+
 /** Start the approval UI and resolve only after the owner approves or rejects. */
 export async function runReviewPrompt(
   sitePath: string,
@@ -106,6 +126,9 @@ export async function runReviewPrompt(
 
   const draft = draftText(await readFile(draftPath, "utf8"));
   const toolNames = draftToolNames(draft);
+  const proposedTasks =
+    extractTasksFromText(draft) ?? (await loadTasksIfPresent(sitePath)) ?? [];
+  const projectTasksPath = tasksPath(sitePath);
   const approvalPath = path.join(
     sitePath,
     ".webmcpify",
@@ -127,14 +150,31 @@ export async function runReviewPrompt(
           .join("\n")
       : `<p>No tool names could be extracted automatically. Enter approved names below.</p>`;
 
+    const taskRows = proposedTasks.length
+      ? proposedTasks
+          .map(
+            (task) =>
+              `<label><input type="checkbox" name="taskIds" value="${htmlEscape(
+                task.id
+              )}" checked> <strong>${htmlEscape(task.id)}</strong>: ${htmlEscape(
+                task.description
+              )}<br><code>${htmlEscape(task.verify)}</code></label>`
+          )
+          .join("\n")
+      : `<p>No valid 5-6 task proposal was found. Edit the JSON below before approving.</p>`;
+    const taskJson = htmlEscape(JSON.stringify(proposedTasks, null, 2));
+
     response.type("html").send(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>WebMCPify review</title>
-<style>body{font:16px system-ui,sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem;color:#202124}pre{white-space:pre-wrap;background:#f5f5f5;padding:1rem;border-radius:8px;max-height:55vh;overflow:auto}label{display:block;margin:.5rem 0}textarea{width:100%;min-height:6rem}button{margin-top:1rem;padding:.6rem 1rem}.reject{margin-left:.5rem}</style>
+<style>body{font:16px system-ui,sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem;color:#202124}pre{white-space:pre-wrap;background:#f5f5f5;padding:1rem;border-radius:8px;max-height:45vh;overflow:auto}label{display:block;margin:.5rem 0}textarea{width:100%;min-height:8rem;font:13px ui-monospace,monospace}code{display:inline-block;margin:.25rem 0;background:#f5f5f5;padding:.2rem}.section{border-top:1px solid #ddd;margin-top:1.5rem;padding-top:1rem}button{margin-top:1rem;padding:.6rem 1rem}.reject{margin-left:.5rem}</style>
 </head><body><h1>Review WebMCP draft</h1>
-<p>Approve only tools you have inspected. Approval writes a local manifest; it does not deploy source changes.</p>
+<p>Approve only tools and verification tasks you have inspected. Approval writes a local manifest and <code>tasks.json</code>; it does not deploy source changes.</p>
 <h2>Draft</h2><pre>${htmlEscape(draft)}</pre>
 <form method="post" action="/approve"><h2>Approved tools</h2>${checkboxes}
 <p>Additional or corrected names, one per line:</p><textarea name="additionalTools" placeholder="search_items\nsubmit_form"></textarea>
+<div class="section"><h2>Approved verification tasks</h2>${taskRows}
+<p>Edit the task definitions below if needed. Every task must have an observable verify expression.</p>
+<textarea name="tasksJson" aria-label="Tasks JSON">${taskJson}</textarea></div>
 <br><button type="submit">Save approval</button><button class="reject" type="submit" formaction="/reject">Reject draft</button></form></body></html>`);
   });
 
@@ -151,6 +191,19 @@ export async function runReviewPrompt(
     app.post("/approve", async (request, response) => {
       try {
         const tools = approvedToolNames(request.body);
+        const taskJson =
+          typeof request.body.tasksJson === "string"
+            ? request.body.tasksJson
+            : JSON.stringify(proposedTasks);
+        const editedTasks = parseTasksJson(taskJson);
+        const selectedTaskIds = approvedTaskIds(request.body);
+        const tasks = proposedTasks.length
+          ? editedTasks.filter((task) => selectedTaskIds.includes(task.id))
+          : editedTasks;
+        if (tasks.length === 0) {
+          throw new Error("Approve at least one verification task.");
+        }
+        await writeTasks(sitePath, tasks);
         await mkdir(path.dirname(approvalPath), { recursive: true });
         await writeFile(
           approvalPath,
@@ -160,6 +213,8 @@ export async function runReviewPrompt(
               approvedAt: new Date().toISOString(),
               draftPath,
               tools,
+              tasks,
+              tasksPath: projectTasksPath,
             },
             null,
             2
@@ -173,7 +228,9 @@ export async function runReviewPrompt(
             version: 1,
             approved: true,
             tools,
+            tasks,
             approvalPath,
+            tasksPath: projectTasksPath,
             draftPath,
             reviewedAt: new Date().toISOString(),
           },
@@ -187,10 +244,10 @@ export async function runReviewPrompt(
         );
 
         response.type("html").send(`<!doctype html><html lang="en"><body>
-<h1>Approval saved</h1><p>${tools.length} tool(s) approved for <code>${htmlEscape(
+<h1>Approval saved</h1><p>${tools.length} tool(s) and ${tasks.length} task(s) approved for <code>${htmlEscape(
           sitePath
         )}</code>.</p><p>You can close this window.</p></body></html>`);
-        finish({ approved: true, tools, approvalPath, decisionPath });
+        finish({ approved: true, tools, tasks, approvalPath, decisionPath });
       } catch (error) {
         response
           .status(500)
@@ -207,6 +264,7 @@ export async function runReviewPrompt(
             version: 1,
             approved: false,
             tools: [],
+            tasks: [],
             approvalPath,
             draftPath,
             reviewedAt: new Date().toISOString(),
@@ -221,7 +279,7 @@ export async function runReviewPrompt(
         );
         response.type("html").send(`<!doctype html><html lang="en"><body>
 <h1>Draft rejected</h1><p>No approval manifest was changed.</p></body></html>`);
-        finish({ approved: false, tools: [], approvalPath, decisionPath });
+        finish({ approved: false, tools: [], tasks: [], approvalPath, decisionPath });
       } catch (error) {
         response
           .status(500)
@@ -248,7 +306,7 @@ export async function runReview(opts: ReviewOptions): Promise<void> {
   console.log(
     `[review] ${result.approved ? "approved" : "rejected"} ${
       result.tools.length
-    } tool(s)`
+    } tool(s), ${result.tasks.length} task(s)`
   );
   if (result.decisionPath) {
     console.log(`[review] decision saved to ${result.decisionPath}`);

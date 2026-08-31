@@ -53,3 +53,23 @@ file organization and runtime conventions.
   new file was created, why that location fits, and where the tool is wired in
   or registered at runtime.
 `.trim();
+
+export const TASK_AUTHORING_PROMPT = `
+Based on the actions and tools you identified during discovery, propose 5-6
+realistic tasks a user might ask an AI agent to complete on this site using
+the available tools.
+
+For each task, write a "verify" expression: a single JavaScript snippet that,
+when evaluated in the live page after the task is attempted, returns true only
+if the task's real-world effect actually happened. Base this on real,
+observable state — persisted storage, DOM content, or the site's own state
+management — not on trusting the agent's own claim of success.
+
+Include at least one task that checks tool availability itself, such as
+confirming a conditionally registered tool is or is not present through
+navigator.modelContext.tools. Do not include tasks whose effect cannot be
+verified this way.
+
+Output the task proposal as JSON:
+[{ "id": "...", "description": "...", "verify": "..." }]
+`.trim();

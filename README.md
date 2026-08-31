@@ -36,7 +36,9 @@ Temporal setup. Temporal is optional and can be enabled per project with
 
 ## Reproduction guide
 
-Start the target site separately and note its URL. For WebMCP discovery, Chrome must be started with WebMCP enabled and remote debugging available. For example:
+Start the target site separately and note its URL. The independent scorer
+connects to the running Chrome instance over CDP, so Chrome must be started
+with WebMCP enabled and remote debugging available. For example:
 
 ```bash
 google-chrome \
@@ -48,9 +50,33 @@ google-chrome \
 
 The DevTools MCP configuration uses `--category-experimental-webmcp` and `--autoConnect`. If the target does not have `.mcp.json`, `test` and `repair` create `.webmcpify/chrome-devtools-mcp.json` without replacing an existing configuration.
 
+The scorer uses `http://127.0.0.1:9222` by default. Set
+`WEBMCPIFY_CDP_URL` if Chrome is listening on another CDP endpoint.
+
+### Project-local tasks
+
+Tasks are generated for the target project, not bundled with WebMCPify. The
+generation agent proposes 5-6 realistic tasks from the site's discovered
+actions. Each task includes a JavaScript `verify` expression that checks the
+real effect in the live page using observable DOM, persisted storage, or the
+site's own state.
+
+The human review page shows each task and its verify expression beside the
+proposed tools. The owner can approve, edit, or reject tasks. Only the
+approved task list is written to `./target-site/tasks.json`, and baseline,
+test, repair, and Temporal scoring all use that same file.
+
+Do not approve a verify expression unless it is correct in the live page. A
+verify expression that accidentally always returns `true` would invalidate the
+evaluation even if the agent failed the task.
+
 ### Baseline
 
-Run the one-shot self-verifying baseline. It performs focused discovery, adds or checks WebMCP registrations, and reports its own browser verification. WebMCPify then runs its independent evaluator. The baseline intentionally has source-editing access and is the comparison point for the isolated workflow.
+Run the one-shot self-verifying baseline after approving a project task list.
+It performs focused discovery, adds or checks WebMCP registrations, and
+attempts the same reviewed tasks. WebMCPify then evaluates each task's verify
+expression independently. The baseline intentionally has source-editing
+access and is the comparison point for the isolated workflow.
 
 ```bash
 node dist/cli.js baseline \
@@ -66,8 +92,8 @@ historical reference run.
 
 ### Generate, review, test, repair, and evaluate
 
-Generation is a draft-only, read-only step. Choose `auto`, `declarative`, or
-`imperative`:
+Generation is a draft-only, read-only step. It proposes both WebMCP changes
+and a project-local task list. Choose `auto`, `declarative`, or `imperative`:
 
 ```bash
 node dist/cli.js generate \
@@ -95,9 +121,10 @@ created file, why that location fits, and where it is wired at runtime.
 
 Generation does not edit the target site or verify the result. The raw draft
 trajectory is saved to a timestamped `trajectories/generate-*.json` file with a
-metadata sidecar; review selects the latest generation trajectory. Review
-currently displays that draft and records the approval decision rather than
-applying source changes automatically.
+metadata sidecar. It contains the discovery report, proposed diff,
+placement/wiring summary, and task JSON. Review selects the latest generation
+trajectory, validates the task definitions, and records the approval decision
+rather than applying source changes automatically.
 
 Review the draft in the local approval page:
 
@@ -105,10 +132,11 @@ Review the draft in the local approval page:
 node dist/cli.js review --path ./target-site
 ```
 
-Open the printed localhost URL and approve only the tools you inspected. The
-approval is saved to `./target-site/.webmcpify/approved-tools.json`. The
-current review step records the approved tool names and does not automatically
-apply the generated source diff.
+Open the printed localhost URL and approve only the tools and verify
+expressions you inspected. The tool manifest is saved to
+`./target-site/.webmcpify/approved-tools.json`, and the approved task list is
+saved to `./target-site/tasks.json`. The current review step records these
+decisions and does not automatically apply the generated source diff.
 
 Then run the isolated audit and independent score:
 
@@ -122,13 +150,12 @@ node dist/cli.js eval
 ```
 
 The isolated agent has MCP browser access only; it cannot read or edit the
-site's source files. Its trajectory is saved to a timestamped
-`trajectories/test-*.json` file; the independent result is saved to a linked
-`trajectories/test-eval-*.json` artifact. The evaluator
-currently runs seven generic structural checks covering rendering, action
-discoverability, controls, forms, links, reload behavior, and WebMCP runtime
-visibility. These checks are intentionally domain-agnostic and do not yet
-replace site-specific end-state assertions for every tool.
+site's source files. It receives the approved task list and must attempt every
+task using only the live browser and approved WebMCP tools. Its trajectory is
+saved to a timestamped `trajectories/test-*.json` file; the independent result
+is saved to a linked `trajectories/test-eval-*.json` artifact. The scorer
+evaluates every approved verify expression in the live page after the agent
+session and does not trust the agent's success claims.
 
 For a plain repair, use the latest independent failures:
 
@@ -139,9 +166,9 @@ node dist/cli.js repair \
 ```
 
 The plain repair path gives the agent source-editing and browser access for a
-focused repair pass. Its raw output and failure context are saved to a
-timestamped `trajectories/repair-*.json` file. Run `test` again for an
-independent score.
+focused repair pass based on failed task IDs and verify details. Its raw output
+and failure context are saved to a timestamped `trajectories/repair-*.json`
+file. Run `test` again for an independent score.
 
 ## Optional durable repair with Temporal
 
@@ -168,13 +195,13 @@ node dist/temporal/worker.js
 
 In a third terminal, start a durable repair workflow. With the project setting
 enabled, `repair` uses Temporal without needing the flag every time. The task
-must match one of the evaluator's task names, such as `page survives a reload`:
+must match one of the approved task IDs from `tasks.json`, such as `task-1`:
 
 ```bash
 node dist/cli.js repair \
   --path ./target-site \
   --url http://localhost:5173 \
-  --task "page survives a reload" \
+  --task "task-1" \
   --provider antigravity
 ```
 
@@ -191,10 +218,11 @@ The precedence is explicit CLI flag, `WEBMCPIFY_DURABLE`, project config, then
 plain repair by default. The plain repair path remains available and does not
 require Temporal.
 
-The current durable path reuses the draft generator and approval manifest; it
-does not yet automatically apply an approved source diff. That application
-step remains a separate implementation boundary, so inspect and apply the
-approved change before expecting the next test to observe a code repair.
+The current durable path reuses the project task list, draft generator, review
+manifest, and independent verify expressions. It does not yet automatically
+apply an approved source diff. That application step remains a separate
+implementation boundary, so inspect and apply the approved change before
+expecting the next test to observe a code repair.
 
 To demonstrate durability, stop the worker while the workflow is waiting on an activity, restart it with `node dist/temporal/worker.js`, and inspect the resumed workflow in the Temporal UI at `http://localhost:8233`. A real resume claim should be recorded in the changelog only after observing the event history.
 
@@ -239,12 +267,14 @@ interpreting the results:
 
 - `generate` is read-only and saves the agent's draft trajectory; it does not
   write a pending patch or modify the target site.
-- `review` records approved tool names for the isolated test and does not yet
-  apply approved source changes.
-- `test` is source-blind and MCP-only, but the independent scorer currently
-  checks generic page structure rather than every domain-specific tool outcome.
-- `eval` reports the saved independent score; it does not yet check rejected
-  tool reachability or compare a full task catalog.
+- `review` records approved tool names and approved task definitions for the
+  isolated test, writes `tasks.json`, and does not yet apply approved source
+  changes.
+- `test` is source-blind and MCP-only; the scorer evaluates the approved task
+  expressions, but the expressions themselves still require careful human
+  review because they run in the live page.
+- `eval` reports the latest saved task score; it does not yet check rejected
+  tool reachability or compare multiple task catalogs.
 - Temporal is durable only for the repair orchestration. It retries activities
   and preserves workflow state, but the source-diff application boundary still
   needs to be completed for fully automatic durable repair.

@@ -77,7 +77,10 @@ program
     "path to the site's codebase (defaults to the current directory)"
   )
   .option("-u, --url <url>", "URL of the running site (required with --durable)")
-  .option("-t, --task <task>", "scoring task name (required with --durable)")
+  .option(
+    "-t, --task <task>",
+    "approved tasks.json task id (required with --durable)"
+  )
   .option("--max-repairs <number>", "maximum durable repair attempts", "3")
   .option("--durable", "run the repair loop through Temporal")
   .option("--no-durable", "force the plain repair loop for this run")

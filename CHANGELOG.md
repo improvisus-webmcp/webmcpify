@@ -122,6 +122,28 @@ this storage change.
 moved all future runs to non-overwriting, timestamped artifacts so the full
 workflow can be followed from discovery through final result.
 
+### Iteration: generalized task authoring and scoring per target project
+
+**What I tried and why:** The earlier evaluator relied on generic or
+coffee-store-specific assumptions instead of a task list describing the real
+outcome a user wanted. That made it difficult to score another site's actions
+honestly and left no single, reviewed definition of success. The generation
+prompt now authors 5-6 project-specific tasks with observable JavaScript
+`verify` expressions, and the review page treats those tasks as part of the
+same approval boundary as the tools.
+
+**Evidence:** Review validates the proposed task JSON, shows each description
+and verify expression, writes only the approved definitions to the target
+project's `tasks.json`, and records the decision in the trajectory index.
+Baseline, test, repair, and Temporal scoring all load that same task file and
+evaluate its expressions in the live page. The implementation compiles with
+`pnpm build`; a new live task run is still required to report a pass-rate
+number.
+
+**Decision:** Kept task authoring per project rather than bundling domain
+knowledge in WebMCPify. Required human approval because a verify expression
+that is accidentally lenient could silently invalidate the entire evaluation.
+
 ### Iteration: made Temporal opt-in via `init --with-temporal`
 
 **What I tried and why:** Initially, durable execution was exposed only as a
