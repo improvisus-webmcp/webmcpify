@@ -1,6 +1,5 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import { scoreTasks } from "../lib/eval.js";
@@ -8,6 +7,10 @@ import {
   DISCOVERY_GUIDANCE,
   TOOL_PLACEMENT_GUIDANCE,
 } from "../lib/prompts.js";
+import {
+  createTrajectoryArtifact,
+  createTrajectoryPath,
+} from "../lib/trajectories.js";
 
 export const AUDIT_PROMPT = `
 ${DISCOVERY_GUIDANCE}
@@ -37,11 +40,7 @@ export async function runBaseline(opts: {
 }) {
   const provider = resolveProvider(opts.provider);
   const sitePath = path.resolve(opts.path);
-  const cliRoot = path.resolve(
-    path.dirname(fileURLToPath(import.meta.url)),
-    "../.."
-  );
-  const trajectoryPath = path.join(cliRoot, "trajectories/baseline.json");
+  const trajectoryPath = createTrajectoryPath("baseline");
   const mcpConfigPath = path.join(sitePath, ".mcp.json");
 
   console.log(
@@ -55,11 +54,27 @@ export async function runBaseline(opts: {
     allowedTools: "Read,Edit,Bash,mcp__chrome-devtools__*",
     mcpConfig: existsSync(mcpConfigPath) ? mcpConfigPath : undefined,
     saveTo: trajectoryPath,
+    trajectoryMetadata: {
+      role: "baseline",
+      sitePath,
+      url: opts.url,
+    },
   });
 
-  console.log("[baseline] session complete, saved to trajectories/baseline.json");
+  console.log(`[baseline] session complete, saved to ${trajectoryPath}`);
   console.log("[baseline] running independent eval check against live site...");
 
   const scores = await scoreTasks(opts.url);
+  const evaluationPath = await createTrajectoryArtifact(
+    "baseline-eval",
+    scores,
+    {
+      provider,
+      url: opts.url,
+      sourceTrajectory: trajectoryPath,
+      cwd: sitePath,
+    }
+  );
   console.log(`[baseline] result: ${scores.passed}/${scores.total} tasks passed`);
+  console.log(`[baseline] independent evaluation saved to ${evaluationPath}`);
 }

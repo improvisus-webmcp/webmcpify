@@ -1,15 +1,19 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import { resolveDurable } from "../lib/config.js";
 import { writeChromeDevtoolsMcpConfig } from "../lib/mcp-config.js";
-import { trajectoryPath } from "../lib/paths.js";
 import {
   DISCOVERY_GUIDANCE,
   TOOL_PLACEMENT_GUIDANCE,
 } from "../lib/prompts.js";
+import {
+  createTrajectoryArtifact,
+  createTrajectoryPath,
+  latestTrajectoryPath,
+} from "../lib/trajectories.js";
 import type { StoredTestEvaluation } from "./test.js";
 
 export interface RepairOptions {
@@ -21,18 +25,24 @@ export interface RepairOptions {
   maxRepairs?: number | string;
 }
 
-async function readLastEvaluation(): Promise<StoredTestEvaluation> {
-  const evaluationPath = trajectoryPath("test-eval.json");
-  if (!existsSync(evaluationPath)) {
+async function readLastEvaluation(): Promise<{
+  evaluation: StoredTestEvaluation;
+  path: string;
+}> {
+  const evaluationPath = await latestTrajectoryPath("test-eval");
+  if (!evaluationPath || !existsSync(evaluationPath)) {
     throw new Error(
-      `No test evaluation found at ${evaluationPath}. Run "webmcpify test" first.`
+      `No test evaluation found in trajectories. Run "webmcpify test" first.`
     );
   }
 
   try {
-    return JSON.parse(
-      await readFile(evaluationPath, "utf8")
-    ) as StoredTestEvaluation;
+    return {
+      evaluation: JSON.parse(
+        await readFile(evaluationPath, "utf8")
+      ) as StoredTestEvaluation,
+      path: evaluationPath,
+    };
   } catch (error) {
     throw new Error(
       `Could not read the last test evaluation: ${
@@ -44,7 +54,10 @@ async function readLastEvaluation(): Promise<StoredTestEvaluation> {
 
 async function runPlainRepair(opts: RepairOptions): Promise<void> {
   const provider = resolveProvider(opts.provider);
-  const evaluation = await readLastEvaluation();
+  const {
+    evaluation,
+    path: evaluationPath,
+  } = await readLastEvaluation();
   const failedTasks = evaluation.scores.tasks.filter((task) => !task.passed);
 
   if (failedTasks.length === 0) {
@@ -53,7 +66,7 @@ async function runPlainRepair(opts: RepairOptions): Promise<void> {
 
   const sitePath = path.resolve(opts.path ?? process.cwd());
   const mcpConfigPath = await writeChromeDevtoolsMcpConfig(sitePath);
-  const repairTrajectory = trajectoryPath("repair.json");
+  const repairTrajectory = createTrajectoryPath("repair");
   const failures = failedTasks
     .map(
       (task) =>
@@ -89,6 +102,13 @@ each affected tool, and the verification result.`;
     allowedTools: "Read,Edit,Bash,mcp__chrome-devtools__*",
     mcpConfig: existsSync(mcpConfigPath) ? mcpConfigPath : undefined,
     saveTo: repairTrajectory,
+    trajectoryMetadata: {
+      role: "repair",
+      sitePath,
+      url: evaluation.url,
+      sourceEvaluation: evaluationPath,
+      failures: failedTasks,
+    },
   });
 
   console.log(`[repair] repair trajectory saved to ${repairTrajectory}`);
@@ -130,6 +150,7 @@ async function runDurableRepair(opts: RepairOptions): Promise<void> {
       namespace: process.env.WEBMCPIFY_TEMPORAL_NAMESPACE ?? "default",
     });
     const workflowId = `repair-${workflowSlug(opts.task)}-${Date.now()}`;
+    const startedAt = new Date().toISOString();
     const workflowOptions = {
       path: path.resolve(opts.path ?? process.cwd()),
       url: opts.url,
@@ -144,8 +165,46 @@ async function runDurableRepair(opts: RepairOptions): Promise<void> {
     });
 
     console.log(`[repair] durable workflow started: ${handle.workflowId}`);
-    const result = await handle.result();
-    console.log(`[repair] result: ${JSON.stringify(result)}`);
+    try {
+      const result = await handle.result();
+      const trajectory = await createTrajectoryArtifact(
+        "temporal-repair",
+        result,
+        {
+          workflowId,
+          task: opts.task,
+          url: opts.url,
+          sitePath: workflowOptions.path,
+          provider: opts.provider,
+          maxRepairs,
+          startedAt,
+          finishedAt: new Date().toISOString(),
+        }
+      );
+      console.log(`[repair] result: ${JSON.stringify(result)}`);
+      console.log(`[repair] workflow artifact saved to ${trajectory}`);
+    } catch (error) {
+      const trajectory = await createTrajectoryArtifact(
+        "temporal-repair",
+        {
+          error: error instanceof Error ? error.message : String(error),
+          workflowId,
+        },
+        {
+          status: "failed",
+          workflowId,
+          task: opts.task,
+          url: opts.url,
+          sitePath: workflowOptions.path,
+          provider: opts.provider,
+          maxRepairs,
+          startedAt,
+          finishedAt: new Date().toISOString(),
+        }
+      );
+      console.log(`[repair] failed workflow artifact saved to ${trajectory}`);
+      throw error;
+    }
   } finally {
     await connection.close();
   }

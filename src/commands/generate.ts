@@ -2,11 +2,11 @@ import path from "node:path";
 import { existsSync } from "node:fs";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
-import { trajectoryPath } from "../lib/paths.js";
 import {
   DISCOVERY_GUIDANCE,
   TOOL_PLACEMENT_GUIDANCE,
 } from "../lib/prompts.js";
+import { createTrajectoryPath } from "../lib/trajectories.js";
 
 export const GENERATE_ONLY_PROMPT = `
 ${DISCOVERY_GUIDANCE}
@@ -61,6 +61,7 @@ export interface GenerateOptions {
   provider?: string;
   method?: string;
   context?: string;
+  trajectoryMetadata?: Record<string, unknown>;
 }
 
 export async function runGenerate(opts: GenerateOptions) {
@@ -72,7 +73,7 @@ export async function runGenerate(opts: GenerateOptions) {
     throw new Error(`Site path does not exist: ${sitePath}`);
   }
 
-  const saveTo = trajectoryPath("generate.json");
+  const saveTo = createTrajectoryPath("generate");
   const strategy = methodInstruction(method);
   const failureContext = opts.context
     ? `A previous independent test reported this failure. Use it to focus the
@@ -95,6 +96,13 @@ ${opts.context}`
     // permission hint both keep the site untouched until review/approval.
     allowedTools: "Read",
     saveTo,
+    trajectoryMetadata: {
+      role: "generate",
+      sitePath,
+      method,
+      context: opts.context,
+      ...opts.trajectoryMetadata,
+    },
   });
 
   console.log(`[generate] draft saved to ${saveTo}`);

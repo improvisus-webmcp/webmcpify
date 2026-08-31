@@ -103,6 +103,25 @@ and registrations grounded in the site's actual implementation.
 **Decision:** Kept discovery as a shared prompt block for generation, baseline,
 and repair. It narrows exploration while preserving domain-agnostic behavior.
 
+### Iteration: preserved complete trajectories and run checkpoints
+
+**What I tried and why:** The repository previously kept one static baseline
+trajectory, while later generation, test, repair, review, and Temporal runs
+could overwrite or leave no judge-friendly record of the instructions,
+permissions, feedback, retries, or human decisions that shaped the result.
+
+**Evidence:** Every agent run now writes a timestamped raw JSON trajectory and
+a matching metadata sidecar containing its prompt, provider, target, allowed
+tools, timing, status, and related context. Structured artifacts record
+independent evaluations, review decisions, and Temporal checkpoints, while
+`trajectories/README.md` maintains an index. The trajectory capture layer
+compiled successfully with `pnpm build`; no new provider run was needed for
+this storage change.
+
+**Decision:** Kept the original `baseline.json` as historical evidence and
+moved all future runs to non-overwriting, timestamped artifacts so the full
+workflow can be followed from discovery through final result.
+
 ### Iteration: made Temporal opt-in via `init --with-temporal`
 
 **What I tried and why:** Initially, durable execution was exposed only as a

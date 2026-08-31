@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { trajectoryPath } from "../lib/paths.js";
+import { latestTrajectoryPath } from "../lib/trajectories.js";
 import type { StoredTestEvaluation } from "./test.js";
 
 function displaySymbol(passed: boolean): string {
@@ -8,10 +8,10 @@ function displaySymbol(passed: boolean): string {
 }
 
 export async function runEval() {
-  const evaluationPath = trajectoryPath("test-eval.json");
-  if (!existsSync(evaluationPath)) {
+  const evaluationPath = await latestTrajectoryPath("test-eval");
+  if (!evaluationPath || !existsSync(evaluationPath)) {
     throw new Error(
-      `No test evaluation found at ${evaluationPath}. Run "webmcpify test" first.`
+      "No test evaluation found in trajectories. Run \"webmcpify test\" first."
     );
   }
 

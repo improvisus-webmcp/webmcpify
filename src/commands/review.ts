@@ -2,7 +2,10 @@ import express from "express";
 import { existsSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { trajectoryPath } from "../lib/paths.js";
+import {
+  createTrajectoryArtifact,
+  latestTrajectoryPath,
+} from "../lib/trajectories.js";
 
 export interface ReviewOptions {
   port?: string;
@@ -13,6 +16,7 @@ export interface ReviewResult {
   approved: boolean;
   tools: string[];
   approvalPath: string;
+  decisionPath?: string;
 }
 
 function htmlEscape(value: string): string {
@@ -90,12 +94,13 @@ function approvedToolNames(requestBody: {
 /** Start the approval UI and resolve only after the owner approves or rejects. */
 export async function runReviewPrompt(
   sitePath: string,
-  requestedPort?: string
+  requestedPort?: string,
+  trajectoryMetadata: Record<string, unknown> = {}
 ): Promise<ReviewResult> {
-  const draftPath = trajectoryPath("generate.json");
-  if (!existsSync(draftPath)) {
+  const draftPath = await latestTrajectoryPath("generate");
+  if (!draftPath || !existsSync(draftPath)) {
     throw new Error(
-      `No generated draft found at ${draftPath}. Run "webmcpify generate" first.`
+      "No generated draft found in trajectories. Run \"webmcpify generate\" first."
     );
   }
 
@@ -162,11 +167,30 @@ export async function runReviewPrompt(
           "utf8"
         );
 
+        const decisionPath = await createTrajectoryArtifact(
+          "review-decision",
+          {
+            version: 1,
+            approved: true,
+            tools,
+            approvalPath,
+            draftPath,
+            reviewedAt: new Date().toISOString(),
+          },
+          {
+            sitePath,
+            draftPath,
+            approvalPath,
+            port,
+            ...trajectoryMetadata,
+          }
+        );
+
         response.type("html").send(`<!doctype html><html lang="en"><body>
 <h1>Approval saved</h1><p>${tools.length} tool(s) approved for <code>${htmlEscape(
           sitePath
         )}</code>.</p><p>You can close this window.</p></body></html>`);
-        finish({ approved: true, tools, approvalPath });
+        finish({ approved: true, tools, approvalPath, decisionPath });
       } catch (error) {
         response
           .status(500)
@@ -175,10 +199,35 @@ export async function runReviewPrompt(
       }
     });
 
-    app.post("/reject", (_request, response) => {
-      response.type("html").send(`<!doctype html><html lang="en"><body>
+    app.post("/reject", async (_request, response) => {
+      try {
+        const decisionPath = await createTrajectoryArtifact(
+          "review-decision",
+          {
+            version: 1,
+            approved: false,
+            tools: [],
+            approvalPath,
+            draftPath,
+            reviewedAt: new Date().toISOString(),
+          },
+          {
+            sitePath,
+            draftPath,
+            approvalPath,
+            port,
+            ...trajectoryMetadata,
+          }
+        );
+        response.type("html").send(`<!doctype html><html lang="en"><body>
 <h1>Draft rejected</h1><p>No approval manifest was changed.</p></body></html>`);
-      finish({ approved: false, tools: [], approvalPath });
+        finish({ approved: false, tools: [], approvalPath, decisionPath });
+      } catch (error) {
+        response
+          .status(500)
+          .type("text")
+          .send(error instanceof Error ? error.message : String(error));
+      }
     });
 
     const listener = app.listen(port, "127.0.0.1", () => {
@@ -201,4 +250,7 @@ export async function runReview(opts: ReviewOptions): Promise<void> {
       result.tools.length
     } tool(s)`
   );
+  if (result.decisionPath) {
+    console.log(`[review] decision saved to ${result.decisionPath}`);
+  }
 }

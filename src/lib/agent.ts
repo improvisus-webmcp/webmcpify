@@ -9,6 +9,10 @@ import {
   findCodexExecutable,
   resolveExecutable,
 } from "./executables.js";
+import {
+  recordTrajectoryMetadata,
+  type TrajectoryMetadata,
+} from "./trajectories.js";
 
 export interface AgentRunOptions {
   provider: AIProvider;
@@ -17,6 +21,7 @@ export interface AgentRunOptions {
   allowedTools?: string;
   mcpConfig?: string;
   saveTo: string;
+  trajectoryMetadata?: Record<string, unknown>;
 }
 
 type ProviderInvocation = {
@@ -121,28 +126,123 @@ async function prepareAntigravityMcpConfig(opts: AgentRunOptions): Promise<void>
   await writeFile(workspaceConfig, await readFile(opts.mcpConfig, "utf8"), "utf8");
 }
 
-export async function runAgent(opts: AgentRunOptions): Promise<unknown> {
-  if (opts.provider === "claude") {
-    return runClaude({
-      prompt: opts.prompt,
-      cwd: opts.cwd,
-      allowedTools: opts.allowedTools,
-      mcpConfig: opts.mcpConfig,
-      saveTo: opts.saveTo,
-    });
-  }
+function errorProperty(error: unknown, property: string): unknown {
+  if (typeof error !== "object" || error === null) return undefined;
+  return property in error ? error[property as keyof typeof error] : undefined;
+}
 
-  if (opts.provider === "antigravity") {
-    await prepareAntigravityMcpConfig(opts);
-  }
+function inferredRole(saveTo: string): string {
+  return path.basename(saveTo).split("-")[0]?.replace(/\.json$/, "") || "agent";
+}
 
-  const invocation = getInvocation(opts);
-  if (opts.provider === "codex") {
-    const mcpArgs = await codexMcpArgs(opts.mcpConfig);
-    invocation.args.splice(1, 0, ...mcpArgs);
-  }
-  let stdout: string;
+function trajectoryMetadata(
+  opts: AgentRunOptions,
+  status: TrajectoryMetadata["status"],
+  startedAt: string,
+  startedMs: number,
+  finishedAt: string
+): TrajectoryMetadata {
+  const extra = opts.trajectoryMetadata ?? {};
+  return {
+    ...extra,
+    role:
+      typeof extra.role === "string" ? extra.role : inferredRole(opts.saveTo),
+    status,
+    startedAt,
+    finishedAt,
+    durationMs: Date.now() - startedMs,
+    provider: opts.provider,
+    cwd: opts.cwd,
+    prompt: opts.prompt,
+    allowedTools: opts.allowedTools,
+    mcpConfig: opts.mcpConfig,
+  };
+}
+
+async function recordAgentMetadata(
+  opts: AgentRunOptions,
+  status: TrajectoryMetadata["status"],
+  startedAt: string,
+  startedMs: number,
+  extra: Record<string, unknown> = {}
+): Promise<void> {
   try {
+    await recordTrajectoryMetadata(
+      opts.saveTo,
+      trajectoryMetadata(
+        { ...opts, trajectoryMetadata: { ...opts.trajectoryMetadata, ...extra } },
+        status,
+        startedAt,
+        startedMs,
+        new Date().toISOString()
+      )
+    );
+  } catch (metadataError) {
+    console.error(
+      `[trajectory] could not record metadata: ${
+        metadataError instanceof Error ? metadataError.message : String(metadataError)
+      }`
+    );
+  }
+}
+
+async function preserveFailedOutput(
+  opts: AgentRunOptions,
+  error: unknown
+): Promise<void> {
+  if (existsSync(opts.saveTo)) return;
+
+  const stdout = errorProperty(error, "stdout");
+  const output =
+    typeof stdout === "string"
+      ? stdout
+      : JSON.stringify(
+          {
+            error: error instanceof Error ? error.message : String(error),
+          },
+          null,
+          2
+        ) + "\n";
+
+  try {
+    await mkdir(path.dirname(opts.saveTo), { recursive: true });
+    await writeFile(opts.saveTo, output, "utf8");
+  } catch (writeError) {
+    console.error(
+      `[trajectory] could not preserve failed output: ${
+        writeError instanceof Error ? writeError.message : String(writeError)
+      }`
+    );
+  }
+}
+
+export async function runAgent(opts: AgentRunOptions): Promise<unknown> {
+  const startedMs = Date.now();
+  const startedAt = new Date(startedMs).toISOString();
+
+  try {
+    if (opts.provider === "claude") {
+      const result = await runClaude({
+        prompt: opts.prompt,
+        cwd: opts.cwd,
+        allowedTools: opts.allowedTools,
+        mcpConfig: opts.mcpConfig,
+        saveTo: opts.saveTo,
+      });
+      await recordAgentMetadata(opts, "completed", startedAt, startedMs);
+      return result;
+    }
+
+    if (opts.provider === "antigravity") {
+      await prepareAntigravityMcpConfig(opts);
+    }
+
+    const invocation = getInvocation(opts);
+    if (opts.provider === "codex") {
+      const mcpArgs = await codexMcpArgs(opts.mcpConfig);
+      invocation.args.splice(1, 0, ...mcpArgs);
+    }
+    let stdout: string;
     const subprocess = execa(invocation.command, invocation.args, {
       cwd: opts.cwd,
     });
@@ -170,6 +270,13 @@ export async function runAgent(opts: AgentRunOptions): Promise<unknown> {
     });
 
     ({ stdout } = await subprocess);
+
+    await mkdir(path.dirname(opts.saveTo), { recursive: true });
+    await writeFile(opts.saveTo, stdout, "utf8");
+
+    const result = parseOutput(stdout, invocation.jsonLines);
+    await recordAgentMetadata(opts, "completed", startedAt, startedMs);
+    return result;
   } catch (error) {
     if (
       typeof error === "object" &&
@@ -177,15 +284,21 @@ export async function runAgent(opts: AgentRunOptions): Promise<unknown> {
       "code" in error &&
       error.code === "ENOENT"
     ) {
-      throw new Error(
+      const missingCliError = new Error(
         `Could not find the ${opts.provider} CLI. Install it or set WEBMCPIFY_${opts.provider.toUpperCase()}_BIN to its executable path.`
       );
+      await preserveFailedOutput(opts, missingCliError);
+      await recordAgentMetadata(opts, "failed", startedAt, startedMs, {
+        error: missingCliError.message,
+      });
+      throw missingCliError;
     }
+
+    await preserveFailedOutput(opts, error);
+    await recordAgentMetadata(opts, "failed", startedAt, startedMs, {
+      error: error instanceof Error ? error.message : String(error),
+      stderr: errorProperty(error, "stderr"),
+    });
     throw error;
   }
-
-  await mkdir(path.dirname(opts.saveTo), { recursive: true });
-  await writeFile(opts.saveTo, stdout, "utf8");
-
-  return parseOutput(stdout, invocation.jsonLines);
 }

@@ -1,11 +1,14 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import { scoreTasks, type ScoreSummary } from "../lib/eval.js";
 import { writeChromeDevtoolsMcpConfig } from "../lib/mcp-config.js";
-import { trajectoryPath } from "../lib/paths.js";
+import {
+  createTrajectoryArtifact,
+  createTrajectoryPath,
+} from "../lib/trajectories.js";
 
 const TEST_EVALUATION_VERSION = 1;
 
@@ -44,8 +47,12 @@ use only the tools listed there. Its contents are:\n${approved}`;
 export async function runTest(opts: TestOptions): Promise<StoredTestEvaluation> {
   const provider = resolveProvider(opts.provider);
   const sitePath = path.resolve(opts.path ?? process.cwd());
-  const trajectory = trajectoryPath("test.json");
-  const evaluationPath = trajectoryPath("test-eval.json");
+  const trajectory = createTrajectoryPath("test", "all-tasks");
+  const approvalPath = path.join(
+    sitePath,
+    ".webmcpify",
+    "approved-tools.json"
+  );
   const approvalContext = await readApprovalContext(sitePath);
   const hadMcpConfig = existsSync(path.join(sitePath, ".mcp.json"));
   const mcpConfig = await writeChromeDevtoolsMcpConfig(sitePath);
@@ -81,6 +88,13 @@ pass from assumptions or from merely inspecting source code.`;
     allowedTools: "mcp__chrome-devtools__*",
     mcpConfig,
     saveTo: trajectory,
+    trajectoryMetadata: {
+      role: "test",
+      sitePath,
+      url: opts.url,
+      approvalPath,
+      isolation: "mcp-only; no source access",
+    },
   });
 
   console.log("[test] agent session complete; running independent evaluator...");
@@ -93,8 +107,18 @@ pass from assumptions or from merely inspecting source code.`;
     scores,
   };
 
-  await mkdir(path.dirname(evaluationPath), { recursive: true });
-  await writeFile(evaluationPath, JSON.stringify(evaluation, null, 2), "utf8");
+  const evaluationPath = await createTrajectoryArtifact(
+    "test-eval",
+    evaluation,
+    {
+      provider,
+      url: opts.url,
+      sitePath,
+      taskCount: scores.total,
+      sourceTrajectory: trajectory,
+      approvalPath,
+    }
+  );
 
   console.log(`[test] result: ${scores.passed}/${scores.total} tasks passed`);
   console.log(`[test] raw trajectory saved to ${trajectory}`);

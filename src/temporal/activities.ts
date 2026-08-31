@@ -4,6 +4,7 @@ import {
   type ReviewResult,
 } from "../commands/review.js";
 import { scoreTasks } from "../lib/eval.js";
+import { createTrajectoryArtifact } from "../lib/trajectories.js";
 
 export interface ActivityTaskResult {
   task: string;
@@ -15,15 +16,25 @@ export interface ActivityTaskResult {
 export async function generateActivity(
   path: string,
   failureDetail?: string,
-  provider?: string
+  provider?: string,
+  attempt?: number
 ): Promise<void> {
-  await runGenerate({ path, context: failureDetail, provider });
+  await runGenerate({
+    path,
+    context: failureDetail,
+    provider,
+    trajectoryMetadata: {
+      durable: true,
+      attempt,
+    },
+  });
 }
 
 /** Score one of the existing independent browser tasks. */
 export async function testActivity(
   url: string,
-  task: string
+  task: string,
+  attempt?: number
 ): Promise<ActivityTaskResult> {
   const { tasks } = await scoreTasks(url);
   const result = tasks.find((candidate) => candidate.name === task);
@@ -35,14 +46,35 @@ export async function testActivity(
     );
   }
 
-  return {
+  const taskResult = {
     task: result.name,
     passed: result.passed,
     detail: result.detail,
   };
+  await createTrajectoryArtifact(
+    "temporal-test",
+    {
+      url,
+      task: taskResult,
+      attempt,
+    },
+    {
+      url,
+      task,
+      attempt,
+      durable: true,
+    }
+  );
+  return taskResult;
 }
 
 /** Block on the existing localhost approval page until the owner decides. */
-export async function reviewActivity(path: string): Promise<ReviewResult> {
-  return runReviewPrompt(path);
+export async function reviewActivity(
+  path: string,
+  attempt?: number
+): Promise<ReviewResult> {
+  return runReviewPrompt(path, undefined, {
+    durable: true,
+    attempt,
+  });
 }
