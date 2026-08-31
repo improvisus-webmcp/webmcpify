@@ -83,7 +83,7 @@ export async function runReviewPrompt(
   requestedPort?: string,
   trajectoryMetadata: Record<string, unknown> = {}
 ): Promise<ReviewResult> {
-  const draftPath = await latestTrajectoryPath("generate", sitePath);
+  const draftPath = (await latestTrajectoryPath("repair", sitePath)) ?? (await latestTrajectoryPath("generate", sitePath));
   if (!draftPath || !existsSync(draftPath)) {
     throw new Error(
       "No generated draft found in trajectories. Run \"webmcpify generate\" first."

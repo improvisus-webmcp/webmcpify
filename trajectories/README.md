@@ -23,7 +23,7 @@ generate
    │
    ├──► baseline ──► baseline-eval
    │
-   └──► test ──────► test-eval ──► repair ──► test-eval
+   └──► test ──────► test-eval ──► repair ──► patch ──► review ──► apply ──► repair-eval
                                       │
                                       └── durable mode:
                                           temporal-test → temporal-repair
@@ -57,7 +57,9 @@ The agent's report and the independent evaluator are deliberately separate:
 | `baseline-eval-*.json` | Independent baseline score containing the exact task snapshot, task-set fingerprint, run/project identity, and task-level `scores`. | `sourceTrajectory`, `taskSetId`, `targetProject` |
 | `test-*.json` | Source-blind, MCP-only test-agent output for all approved tasks. | `test-*.meta.json` |
 | `test-eval-*.json` | Independent WebMCP score containing the exact task snapshot, task-set fingerprint, run/project identity, and one result per task. | `sourceTrajectory`, `approvalPath`, `taskSetId`, `targetProject` |
-| `repair-*.json` | Plain repair-agent output, including the failed task context. | `sourceEvaluation` |
+| `repair-*.json` | Isolated repair-agent output, including exact failed-task verification evidence and project/run context. | `sourceEvaluation`, `taskSetId` |
+| `repair-result-*.json` | Repair patch handoff status, failed tasks, real patch metadata, or an explicit no-change/failure result. | `repairTrajectory`, `patchPath`, `sourceEvaluation` |
+| `repair-eval-*.json` | Post-apply evaluation of affected tasks with before/after results and improved, unchanged, or regressed status. | `sourceEvaluation`, `patchPath`, `taskSetId` |
 | `temporal-test-*.json` | One durable score checkpoint for one task and one attempt. | `attempt`, task ID in metadata |
 | `temporal-repair-*.json` | Durable workflow result, or an error payload when the workflow fails. | `workflowId`, task ID, attempt budget |
 
@@ -214,3 +216,51 @@ fit the columns belong in the sidecar. A row has this shape:
 | — | baseline-eval | completed | — | — | [baseline-eval-2026-08-31T14-38-52-331Z-5c108a63-phase5-fixture.json](./baseline-eval-2026-08-31T14-38-52-331Z-5c108a63-phase5-fixture.json) | [metadata](./baseline-eval-2026-08-31T14-38-52-331Z-5c108a63-phase5-fixture.meta.json) |
 | — | test-eval | completed | — | — | [test-eval-2026-08-31T14-38-52-368Z-5e134e70-phase5-fixture.json](./test-eval-2026-08-31T14-38-52-368Z-5e134e70-phase5-fixture.json) | [metadata](./test-eval-2026-08-31T14-38-52-368Z-5e134e70-phase5-fixture.meta.json) |
 | — | test-eval | completed | — | — | [test-eval-2026-08-31T14-38-52-376Z-59db92d4-phase5-fixture.json](./test-eval-2026-08-31T14-38-52-376Z-59db92d4-phase5-fixture.json) | [metadata](./test-eval-2026-08-31T14-38-52-376Z-59db92d4-phase5-fixture.meta.json) |
+| — | test-eval | completed | — | — | [test-eval-2026-08-31T14-55-57-104Z-bb7d8f93-repair-fixture.json](./test-eval-2026-08-31T14-55-57-104Z-bb7d8f93-repair-fixture.json) | [metadata](./test-eval-2026-08-31T14-55-57-104Z-bb7d8f93-repair-fixture.meta.json) |
+| — | test-eval | completed | — | — | [test-eval-2026-08-31T14-56-16-367Z-9781ea7f-repair-fixture.json](./test-eval-2026-08-31T14-56-16-367Z-9781ea7f-repair-fixture.json) | [metadata](./test-eval-2026-08-31T14-56-16-367Z-9781ea7f-repair-fixture.meta.json) |
+| — | repair | completed | — | — | [repair-2026-08-31T14-56-16-382Z-1a30ad8d-repair-fixture.json](./repair-2026-08-31T14-56-16-382Z-1a30ad8d-repair-fixture.json) | [metadata](./repair-2026-08-31T14-56-16-382Z-1a30ad8d-repair-fixture.meta.json) |
+| — | patch | completed | — | — | [patch-2026-08-31T14-56-16-472Z-e28a0d82.json](./patch-2026-08-31T14-56-16-472Z-e28a0d82.json) | [metadata](./patch-2026-08-31T14-56-16-472Z-e28a0d82.meta.json) |
+| — | test-eval | completed | — | — | [test-eval-2026-08-31T14-56-59-087Z-4a166e78-repair-fixture.json](./test-eval-2026-08-31T14-56-59-087Z-4a166e78-repair-fixture.json) | [metadata](./test-eval-2026-08-31T14-56-59-087Z-4a166e78-repair-fixture.meta.json) |
+| — | repair | completed | — | — | [repair-2026-08-31T14-56-59-101Z-73f89775-repair-fixture.json](./repair-2026-08-31T14-56-59-101Z-73f89775-repair-fixture.json) | [metadata](./repair-2026-08-31T14-56-59-101Z-73f89775-repair-fixture.meta.json) |
+| — | patch | completed | — | — | [patch-2026-08-31T14-56-59-202Z-da7ee693.json](./patch-2026-08-31T14-56-59-202Z-da7ee693.json) | [metadata](./patch-2026-08-31T14-56-59-202Z-da7ee693.meta.json) |
+| — | test-eval | completed | — | — | [test-eval-2026-08-31T14-57-16-712Z-8335b6f3-repair-fixture.json](./test-eval-2026-08-31T14-57-16-712Z-8335b6f3-repair-fixture.json) | [metadata](./test-eval-2026-08-31T14-57-16-712Z-8335b6f3-repair-fixture.meta.json) |
+| — | repair | completed | — | — | [repair-2026-08-31T14-57-16-730Z-25c7d6bb-repair-fixture.json](./repair-2026-08-31T14-57-16-730Z-25c7d6bb-repair-fixture.json) | [metadata](./repair-2026-08-31T14-57-16-730Z-25c7d6bb-repair-fixture.meta.json) |
+| — | patch | completed | — | — | [patch-2026-08-31T14-57-16-835Z-9a88e0b2.json](./patch-2026-08-31T14-57-16-835Z-9a88e0b2.json) | [metadata](./patch-2026-08-31T14-57-16-835Z-9a88e0b2.meta.json) |
+| — | repair-eval | completed | — | — | [repair-eval-2026-08-31T14-57-34-424Z-99921f79.json](./repair-eval-2026-08-31T14-57-34-424Z-99921f79.json) | [metadata](./repair-eval-2026-08-31T14-57-34-424Z-99921f79.meta.json) |
+| — | apply | completed | — | — | [apply-2026-08-31T14-57-34-432Z-1dd9c8e8.json](./apply-2026-08-31T14-57-34-432Z-1dd9c8e8.json) | [metadata](./apply-2026-08-31T14-57-34-432Z-1dd9c8e8.meta.json) |
+| — | test-eval | completed | — | — | [test-eval-2026-08-31T14-58-13-360Z-46a225db-repair-fixture.json](./test-eval-2026-08-31T14-58-13-360Z-46a225db-repair-fixture.json) | [metadata](./test-eval-2026-08-31T14-58-13-360Z-46a225db-repair-fixture.meta.json) |
+| — | repair | completed | — | — | [repair-2026-08-31T14-58-13-373Z-119bede8-repair-fixture.json](./repair-2026-08-31T14-58-13-373Z-119bede8-repair-fixture.json) | [metadata](./repair-2026-08-31T14-58-13-373Z-119bede8-repair-fixture.meta.json) |
+| — | patch | completed | — | — | [patch-2026-08-31T14-58-13-461Z-b17fd037.json](./patch-2026-08-31T14-58-13-461Z-b17fd037.json) | [metadata](./patch-2026-08-31T14-58-13-461Z-b17fd037.meta.json) |
+| — | repair-eval | completed | — | — | [repair-eval-2026-08-31T14-58-31-153Z-b2209160.json](./repair-eval-2026-08-31T14-58-31-153Z-b2209160.json) | [metadata](./repair-eval-2026-08-31T14-58-31-153Z-b2209160.meta.json) |
+| — | apply | completed | — | — | [apply-2026-08-31T14-58-31-159Z-8dc16748.json](./apply-2026-08-31T14-58-31-159Z-8dc16748.json) | [metadata](./apply-2026-08-31T14-58-31-159Z-8dc16748.meta.json) |
+| — | test-eval | completed | — | — | [test-eval-2026-08-31T14-58-44-424Z-356e0768-repair-fixture.json](./test-eval-2026-08-31T14-58-44-424Z-356e0768-repair-fixture.json) | [metadata](./test-eval-2026-08-31T14-58-44-424Z-356e0768-repair-fixture.meta.json) |
+| — | repair | completed | — | — | [repair-2026-08-31T14-58-44-438Z-713aecc6-repair-fixture.json](./repair-2026-08-31T14-58-44-438Z-713aecc6-repair-fixture.json) | [metadata](./repair-2026-08-31T14-58-44-438Z-713aecc6-repair-fixture.meta.json) |
+| — | patch | completed | — | — | [patch-2026-08-31T14-58-44-538Z-1c9c82ad.json](./patch-2026-08-31T14-58-44-538Z-1c9c82ad.json) | [metadata](./patch-2026-08-31T14-58-44-538Z-1c9c82ad.meta.json) |
+| — | repair-eval | completed | — | — | [repair-eval-2026-08-31T14-59-02-102Z-ccbecd08.json](./repair-eval-2026-08-31T14-59-02-102Z-ccbecd08.json) | [metadata](./repair-eval-2026-08-31T14-59-02-102Z-ccbecd08.meta.json) |
+| — | apply | completed | — | — | [apply-2026-08-31T14-59-02-126Z-deabf2e1.json](./apply-2026-08-31T14-59-02-126Z-deabf2e1.json) | [metadata](./apply-2026-08-31T14-59-02-126Z-deabf2e1.meta.json) |
+| — | test-eval | completed | — | — | [test-eval-2026-08-31T14-59-17-680Z-87535150-repair-fixture.json](./test-eval-2026-08-31T14-59-17-680Z-87535150-repair-fixture.json) | [metadata](./test-eval-2026-08-31T14-59-17-680Z-87535150-repair-fixture.meta.json) |
+| — | repair | completed | — | — | [repair-2026-08-31T14-59-17-694Z-a37e5e59-repair-fixture.json](./repair-2026-08-31T14-59-17-694Z-a37e5e59-repair-fixture.json) | [metadata](./repair-2026-08-31T14-59-17-694Z-a37e5e59-repair-fixture.meta.json) |
+| — | patch | completed | — | — | [patch-2026-08-31T14-59-17-786Z-312786bd.json](./patch-2026-08-31T14-59-17-786Z-312786bd.json) | [metadata](./patch-2026-08-31T14-59-17-786Z-312786bd.meta.json) |
+| — | repair-eval | completed | — | — | [repair-eval-2026-08-31T14-59-21-141Z-f01c6862.json](./repair-eval-2026-08-31T14-59-21-141Z-f01c6862.json) | [metadata](./repair-eval-2026-08-31T14-59-21-141Z-f01c6862.meta.json) |
+| — | apply | completed | — | — | [apply-2026-08-31T14-59-21-163Z-2472bf16.json](./apply-2026-08-31T14-59-21-163Z-2472bf16.json) | [metadata](./apply-2026-08-31T14-59-21-163Z-2472bf16.meta.json) |
+| — | repair-eval | completed | — | — | [repair-eval-2026-08-31T14-59-21-303Z-bbd63d10-repair-regression-fixture.json](./repair-eval-2026-08-31T14-59-21-303Z-bbd63d10-repair-regression-fixture.json) | [metadata](./repair-eval-2026-08-31T14-59-21-303Z-bbd63d10-repair-regression-fixture.meta.json) |
+| — | baseline-eval | completed | — | — | [baseline-eval-2026-08-31T14-59-46-459Z-77d039de-phase5-fixture.json](./baseline-eval-2026-08-31T14-59-46-459Z-77d039de-phase5-fixture.json) | [metadata](./baseline-eval-2026-08-31T14-59-46-459Z-77d039de-phase5-fixture.meta.json) |
+| — | test-eval | completed | — | — | [test-eval-2026-08-31T14-59-46-473Z-6e1a21af-phase5-fixture.json](./test-eval-2026-08-31T14-59-46-473Z-6e1a21af-phase5-fixture.json) | [metadata](./test-eval-2026-08-31T14-59-46-473Z-6e1a21af-phase5-fixture.meta.json) |
+| — | test-eval | completed | — | — | [test-eval-2026-08-31T14-59-46-475Z-ba8e3aab-phase5-fixture.json](./test-eval-2026-08-31T14-59-46-475Z-ba8e3aab-phase5-fixture.json) | [metadata](./test-eval-2026-08-31T14-59-46-475Z-ba8e3aab-phase5-fixture.meta.json) |
+| — | proposed-tools | completed | — | — | [proposed-tools-2026-08-31T14-59-48-057Z-a15fac0c.json](./proposed-tools-2026-08-31T14-59-48-057Z-a15fac0c.json) | [metadata](./proposed-tools-2026-08-31T14-59-48-057Z-a15fac0c.meta.json) |
+| — | proposed-tools | completed | — | — | [proposed-tools-2026-08-31T14-59-48-143Z-dac34cf1.json](./proposed-tools-2026-08-31T14-59-48-143Z-dac34cf1.json) | [metadata](./proposed-tools-2026-08-31T14-59-48-143Z-dac34cf1.meta.json) |
+| — | proposed-tools | completed | — | — | [proposed-tools-2026-08-31T15-00-02-476Z-410578d3.json](./proposed-tools-2026-08-31T15-00-02-476Z-410578d3.json) | [metadata](./proposed-tools-2026-08-31T15-00-02-476Z-410578d3.meta.json) |
+| — | generate | completed | fixture | — | [generate-2026-08-31T15-00-02-480Z-b8a6321a.json](./generate-2026-08-31T15-00-02-480Z-b8a6321a.json) | [metadata](./generate-2026-08-31T15-00-02-480Z-b8a6321a.meta.json) |
+| — | review-decision | completed | — | — | [review-decision-2026-08-31T15-00-02-759Z-ecf811c5.json](./review-decision-2026-08-31T15-00-02-759Z-ecf811c5.json) | [metadata](./review-decision-2026-08-31T15-00-02-759Z-ecf811c5.meta.json) |
+| — | review-decision | completed | — | — | [review-decision-2026-08-31T15-00-02-960Z-606d3edd.json](./review-decision-2026-08-31T15-00-02-960Z-606d3edd.json) | [metadata](./review-decision-2026-08-31T15-00-02-960Z-606d3edd.meta.json) |
+| — | test-eval | completed | — | — | [test-eval-2026-08-31T15-01-03-595Z-bcb5bfa9-repair-fixture.json](./test-eval-2026-08-31T15-01-03-595Z-bcb5bfa9-repair-fixture.json) | [metadata](./test-eval-2026-08-31T15-01-03-595Z-bcb5bfa9-repair-fixture.meta.json) |
+| — | repair | completed | — | — | [repair-2026-08-31T15-01-03-611Z-929081b4-repair-fixture.json](./repair-2026-08-31T15-01-03-611Z-929081b4-repair-fixture.json) | [metadata](./repair-2026-08-31T15-01-03-611Z-929081b4-repair-fixture.meta.json) |
+| — | patch | completed | — | — | [patch-2026-08-31T15-01-03-733Z-d7635d7e.json](./patch-2026-08-31T15-01-03-733Z-d7635d7e.json) | [metadata](./patch-2026-08-31T15-01-03-733Z-d7635d7e.meta.json) |
+| — | repair-eval | completed | — | — | [repair-eval-2026-08-31T15-01-09-386Z-cb73d721.json](./repair-eval-2026-08-31T15-01-09-386Z-cb73d721.json) | [metadata](./repair-eval-2026-08-31T15-01-09-386Z-cb73d721.meta.json) |
+| — | apply | completed | — | — | [apply-2026-08-31T15-01-09-409Z-3182bb74.json](./apply-2026-08-31T15-01-09-409Z-3182bb74.json) | [metadata](./apply-2026-08-31T15-01-09-409Z-3182bb74.meta.json) |
+| — | repair-eval | completed | — | — | [repair-eval-2026-08-31T15-01-09-459Z-ff520e3c-repair-regression-fixture.json](./repair-eval-2026-08-31T15-01-09-459Z-ff520e3c-repair-regression-fixture.json) | [metadata](./repair-eval-2026-08-31T15-01-09-459Z-ff520e3c-repair-regression-fixture.meta.json) |
+| — | patch | completed | — | — | [patch-2026-08-31T15-01-38-275Z-ae6e561d.json](./patch-2026-08-31T15-01-38-275Z-ae6e561d.json) | [metadata](./patch-2026-08-31T15-01-38-275Z-ae6e561d.meta.json) |
+| — | apply | completed | — | — | [apply-2026-08-31T15-01-38-450Z-cc016be8.json](./apply-2026-08-31T15-01-38-450Z-cc016be8.json) | [metadata](./apply-2026-08-31T15-01-38-450Z-cc016be8.meta.json) |
+| — | patch | completed | — | — | [patch-2026-08-31T15-01-38-848Z-735e6404.json](./patch-2026-08-31T15-01-38-848Z-735e6404.json) | [metadata](./patch-2026-08-31T15-01-38-848Z-735e6404.meta.json) |
+| — | patch | completed | — | — | [patch-2026-08-31T15-01-39-655Z-bca8de1c.json](./patch-2026-08-31T15-01-39-655Z-bca8de1c.json) | [metadata](./patch-2026-08-31T15-01-39-655Z-bca8de1c.meta.json) |
+| — | apply | completed | — | — | [apply-2026-08-31T15-01-40-395Z-d13abdd9.json](./apply-2026-08-31T15-01-40-395Z-d13abdd9.json) | [metadata](./apply-2026-08-31T15-01-40-395Z-d13abdd9.meta.json) |

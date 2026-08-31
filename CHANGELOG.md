@@ -4,6 +4,26 @@ All notable changes to WebMCPify are documented here.
 
 ## [Unreleased]
 
+### Added: approved repair workflow
+
+Repair now selects the project-scoped baseline or WebMCP evaluation, supplies
+failed task definitions and their actual verification details to the agent,
+and runs the agent in a temporary copy of the target. The resulting Git diff
+is extracted into the existing `pending-diff.patch` flow; the target checkout
+is not modified until human review and `apply` approval.
+
+Successful approved application records an affected-task `repair-eval` with
+before/after results and explicit improved, unchanged, or regressed status.
+Failed repair attempts, no-change repairs, patch failures, and evaluation
+errors remain as timestamped trajectory artifacts. Temporal repair remains
+compatible because it continues to use the existing plain repair activity
+boundary.
+
+The focused repair verification covers failed-task selection, project-scoped
+evaluation lookup, repair context, real diff extraction, approval refusal,
+successful patch application, and preserved no-improvement/regression
+evidence. No live provider or browser success is claimed.
+
 ### Added: project-scoped baseline and WebMCP evaluation
 
 Baseline and WebMCP test runs now snapshot the same approved `tasks.json`,

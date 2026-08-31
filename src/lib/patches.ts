@@ -21,6 +21,12 @@ export interface PatchMetadata {
   patchStatus: PatchStatus;
   patchPath: string;
   generationTrajectory: string;
+  repair?: {
+    sourceEvaluation: string;
+    url: string;
+    taskSetId?: string;
+    failedTaskIds: string[];
+  };
   error?: string;
   lastApply?: { timestamp: string; status: string; error?: string };
 }
@@ -155,6 +161,7 @@ export async function createPendingPatch(
   sitePath: string,
   rawProviderOutput: string,
   generationTrajectory: string,
+  context?: Pick<PatchMetadata, "repair">,
 ): Promise<PatchMetadata> {
   const timestamp = new Date().toISOString();
   const runId = randomUUID();
@@ -166,6 +173,7 @@ export async function createPendingPatch(
     ...await gitSourceSnapshot(sitePath),
     patchPath: patchPath(sitePath),
     generationTrajectory,
+    ...context,
   };
 
   try {

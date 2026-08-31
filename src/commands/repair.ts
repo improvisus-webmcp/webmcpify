@@ -1,6 +1,8 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { cp, mkdtemp, readFile, rm } from "node:fs/promises";
+import os from "node:os";
+import { execa } from "execa";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import { resolveDurable } from "../lib/config.js";
@@ -14,6 +16,7 @@ import {
   createTrajectoryPath,
   latestTrajectoryPath,
 } from "../lib/trajectories.js";
+import { createPendingPatch } from "../lib/patches.js";
 import type { TaskResult } from "../lib/scoring.js";
 import type { StoredTestEvaluation } from "./test.js";
 
@@ -30,7 +33,11 @@ async function readLastEvaluation(sitePath: string): Promise<{
   evaluation: StoredTestEvaluation;
   path: string;
 }> {
-  const evaluationPath = await latestTrajectoryPath("test-eval", sitePath);
+  const candidates = (await Promise.all([
+    latestTrajectoryPath("test-eval", sitePath),
+    latestTrajectoryPath("baseline-eval", sitePath),
+  ])).filter((candidate): candidate is string => Boolean(candidate));
+  const evaluationPath = candidates.sort().at(-1);
   if (!evaluationPath || !existsSync(evaluationPath)) {
     throw new Error(
       `No test evaluation found in trajectories. Run "webmcpify test" first.`
@@ -53,6 +60,71 @@ async function readLastEvaluation(sitePath: string): Promise<{
   }
 }
 
+export function selectFailedTasks(evaluation: StoredTestEvaluation, requestedTask?: string): TaskResult[] {
+  const failed = evaluation.scores.results.filter((result) => !result.passed);
+  if (!requestedTask) return failed;
+  const selected = failed.filter((result) => result.task === requestedTask);
+  if (!selected.length) throw new Error(`Task "${requestedTask}" is not a failed task in the selected evaluation.`);
+  return selected;
+}
+
+export function repairPrompt(
+  evaluation: StoredTestEvaluation,
+  evaluationPath: string,
+  sitePath: string,
+  failedTasks: TaskResult[],
+): string {
+  const taskEvidence = failedTasks.map((result) => ({
+    task: evaluation.tasks.find((candidate) => candidate.id === result.task),
+    result,
+  }));
+  return `Repair only the failed WebMCP behavior in the target project.
+
+Target project: ${sitePath}
+Evaluation mode: ${evaluation.mode ?? "unknown"}
+Evaluation run ID: ${evaluation.runId ?? "unknown"}
+Task set fingerprint: ${evaluation.taskSetId ?? "unknown"}
+Evaluation artifact: ${evaluationPath}
+
+Failed task evidence (use the exact task definitions and observed details):
+${JSON.stringify(taskEvidence, null, 2)}
+
+Inspect the relevant source and existing WebMCP registrations. Patch only the
+cause of these failures, preserve approved tool names and schemas, and avoid
+unrelated refactors. Do not edit tasks.json or approval manifests.
+
+Before patching, perform focused discovery rather than scanning the entire
+repository:
+
+${DISCOVERY_GUIDANCE}
+
+${TOOL_PLACEMENT_GUIDANCE}
+
+After editing, report files changed, placement and wiring for each affected
+tool, and the verification result. The repair will be reviewed and applied by
+WebMCPify after this session; do not claim approval or deployment.`;
+}
+
+async function createRepairWorkspace(sitePath: string): Promise<string> {
+  const workspace = await mkdtemp(path.join(os.tmpdir(), "webmcpify-repair-"));
+  await cp(sitePath, workspace, {
+    recursive: true,
+    filter: (source) => !source.includes(`${path.sep}.git${path.sep}`) && !source.includes(`${path.sep}.webmcpify${path.sep}`) && !source.includes(`${path.sep}node_modules${path.sep}`),
+  });
+  await execa("git", ["init", "-q"], { cwd: workspace });
+  await execa("git", ["config", "user.email", "webmcpify@example.invalid"], { cwd: workspace });
+  await execa("git", ["config", "user.name", "WebMCPify Repair"], { cwd: workspace });
+  await execa("git", ["add", "-A"], { cwd: workspace });
+  await execa("git", ["commit", "-qm", "repair baseline"], { cwd: workspace });
+  return workspace;
+}
+
+async function workspaceDiff(workspace: string): Promise<string> {
+  const result = await execa("git", ["diff", "--binary", "HEAD"], { cwd: workspace });
+  if (!result.stdout.trim()) throw new Error("Repair agent produced no source changes.");
+  return result.stdout;
+}
+
 async function runPlainRepair(opts: RepairOptions): Promise<void> {
   const provider = resolveProvider(opts.provider);
   const sitePath = path.resolve(opts.path ?? process.cwd());
@@ -60,7 +132,7 @@ async function runPlainRepair(opts: RepairOptions): Promise<void> {
     evaluation,
     path: evaluationPath,
   } = await readLastEvaluation(sitePath);
-  const failedTasks = evaluation.scores.results.filter((task) => !task.passed);
+  const failedTasks = selectFailedTasks(evaluation, opts.task);
 
   if (failedTasks.length === 0) {
     throw new Error("The last test passed every task; there is nothing to repair.");
@@ -68,52 +140,95 @@ async function runPlainRepair(opts: RepairOptions): Promise<void> {
 
   const mcpConfigPath = await writeChromeDevtoolsMcpConfig(sitePath);
   const repairTrajectory = createTrajectoryPath("repair");
-  const failures = failedTasks
-    .map(
-      (task: TaskResult) =>
-        `- ${task.task}: ${task.detail ?? "failed without additional detail"}`
-    )
-    .join("\n");
-
-  const prompt = `Repair the failed WebMCP behavior in this site. The last
-independent test ran against ${evaluation.url} and produced these failures:
-${failures}
-
-Inspect the relevant source and the existing WebMCP registrations. Patch only
-the cause of these failures, preserve the approved tool names and schemas, and
-avoid unrelated refactors.
-
-Before patching, perform the focused discovery below rather than scanning the
-entire repository file by file:
-
-${DISCOVERY_GUIDANCE}
-
-${TOOL_PLACEMENT_GUIDANCE}
-
-After editing, use the browser MCP tools to verify the repaired behavior
-against ${evaluation.url}. Report the files changed, placement and wiring for
-each affected tool, and the verification result.`;
+  const workspace = await createRepairWorkspace(sitePath);
+  const prompt = repairPrompt(evaluation, evaluationPath, sitePath, failedTasks);
 
   console.log(`[repair] patching ${failedTasks.length} failed task(s) via ${provider}...`);
 
-  await runAgent({
-    provider,
-    prompt,
-    cwd: sitePath,
-    allowedTools: "Read,Edit,Bash,mcp__chrome-devtools__*",
-    mcpConfig: existsSync(mcpConfigPath) ? mcpConfigPath : undefined,
-    saveTo: repairTrajectory,
-    trajectoryMetadata: {
-      role: "repair",
-      sitePath,
-      url: evaluation.url,
+  try {
+    await runAgent({
+      provider,
+      prompt,
+      cwd: workspace,
+      allowedTools: "Read,Edit,Bash,mcp__chrome-devtools__*",
+      mcpConfig: existsSync(mcpConfigPath) ? mcpConfigPath : undefined,
+      saveTo: repairTrajectory,
+      trajectoryMetadata: {
+        role: "repair",
+        sitePath,
+        url: evaluation.url,
+        sourceEvaluation: evaluationPath,
+        failures: failedTasks,
+        runId: evaluation.runId,
+        taskSetId: evaluation.taskSetId,
+        repairWorkspace: workspace,
+      },
+    });
+  } catch (error) {
+    await createTrajectoryArtifact("repair-result", {
+      status: "failed",
       sourceEvaluation: evaluationPath,
-      failures: failedTasks,
-    },
-  });
+      failedTasks,
+      error: error instanceof Error ? error.message : String(error),
+    }, {
+      status: "failed",
+      sitePath,
+      runId: evaluation.runId,
+      taskSetId: evaluation.taskSetId,
+      sourceEvaluation: evaluationPath,
+      repairTrajectory,
+    });
+    await rm(workspace, { recursive: true, force: true });
+    throw error;
+  }
+
+  try {
+    const diff = await workspaceDiff(workspace);
+    const patchMetadata = await createPendingPatch(sitePath, diff, repairTrajectory, {
+      repair: {
+        sourceEvaluation: evaluationPath,
+        url: evaluation.url,
+        taskSetId: evaluation.taskSetId,
+        failedTaskIds: failedTasks.map((task) => task.task),
+      },
+    });
+    const repairResult = await createTrajectoryArtifact("repair-result", {
+      status: "awaiting-review",
+      sourceEvaluation: evaluationPath,
+      failedTasks,
+      patch: patchMetadata,
+    }, {
+      sitePath,
+      runId: evaluation.runId,
+      taskSetId: evaluation.taskSetId,
+      sourceEvaluation: evaluationPath,
+      repairTrajectory,
+      patchPath: patchMetadata.patchPath,
+      patchStatus: patchMetadata.patchStatus,
+    });
+    console.log(`[repair] real patch saved to ${patchMetadata.patchPath}`);
+    console.log(`[repair] repair result saved to ${repairResult}`);
+  } catch (error) {
+    await createTrajectoryArtifact("repair-result", {
+      status: "failed",
+      sourceEvaluation: evaluationPath,
+      failedTasks,
+      error: error instanceof Error ? error.message : String(error),
+    }, {
+      status: "failed",
+      sitePath,
+      runId: evaluation.runId,
+      taskSetId: evaluation.taskSetId,
+      sourceEvaluation: evaluationPath,
+      repairTrajectory,
+    });
+    throw error;
+  } finally {
+    await rm(workspace, { recursive: true, force: true });
+  }
 
   console.log(`[repair] repair trajectory saved to ${repairTrajectory}`);
-  console.log('[repair] run "webmcpify test" again to measure the repair independently');
+  console.log('[repair] review the patch, then run "webmcpify apply" to apply and retest affected tasks');
 }
 
 function workflowSlug(value: string): string {

@@ -12,6 +12,8 @@ import {
   writePatchMetadata,
   type PatchMetadata,
 } from "../lib/patches.js";
+import { scoreTasks } from "../lib/scoring.js";
+import { loadTasks } from "../lib/tasks.js";
 
 interface ApplyOptions { path?: string }
 
@@ -97,6 +99,61 @@ async function recordApply(sitePath: string, metadata: PatchMetadata, result: Re
   });
 }
 
+async function recordRepairEvaluation(sitePath: string, metadata: PatchMetadata): Promise<string | undefined> {
+  if (!metadata.repair) return undefined;
+  try {
+    const before = JSON.parse(await readFile(metadata.repair.sourceEvaluation, "utf8")) as {
+      scores?: { results?: Array<{ task: string; passed: boolean; detail: string }> };
+    };
+    const tasks = (await loadTasks(sitePath)).filter((task) => metadata.repair?.failedTaskIds.includes(task.id));
+    const scores = await scoreTasks(metadata.repair.url, tasks);
+    const beforeResults = (before.scores?.results ?? []).filter((result) => metadata.repair?.failedTaskIds.includes(result.task));
+    const beforePassed = beforeResults.filter((result) => result.passed).length;
+    const delta = scores.passed - beforePassed;
+    const status = delta > 0 ? "improved" : delta < 0 ? "regressed" : "unchanged";
+    return createTrajectoryArtifact("repair-eval", {
+      version: 1,
+      mode: "repair",
+      status,
+      runId: metadata.runId,
+      targetProject: sitePath,
+      taskSetId: metadata.repair.taskSetId,
+      sourceEvaluation: metadata.repair.sourceEvaluation,
+      failedTaskIds: metadata.repair.failedTaskIds,
+      before: { passed: beforePassed, total: beforeResults.length, results: beforeResults },
+      after: scores,
+      improvement: delta,
+    }, {
+      sitePath,
+      runId: metadata.runId,
+      targetProject: sitePath,
+      sourceEvaluation: metadata.repair.sourceEvaluation,
+      taskSetId: metadata.repair.taskSetId,
+      failedTaskIds: metadata.repair.failedTaskIds,
+      patchPath: metadata.patchPath,
+      repairStatus: status,
+    });
+  } catch (error) {
+    return createTrajectoryArtifact("repair-eval", {
+      version: 1,
+      mode: "repair",
+      status: "failed",
+      runId: metadata.runId,
+      targetProject: sitePath,
+      sourceEvaluation: metadata.repair.sourceEvaluation,
+      error: error instanceof Error ? error.message : String(error),
+    }, {
+      status: "failed",
+      sitePath,
+      runId: metadata.runId,
+      targetProject: sitePath,
+      sourceEvaluation: metadata.repair.sourceEvaluation,
+      patchPath: metadata.patchPath,
+      repairStatus: "failed",
+    });
+  }
+}
+
 export async function runApply(opts: ApplyOptions): Promise<void> {
   const sitePath = path.resolve(opts.path ?? process.cwd());
   if (!patchExists(sitePath)) {
@@ -135,13 +192,14 @@ export async function runApply(opts: ApplyOptions): Promise<void> {
     console.log("[apply] applying approved patch...");
     await runGit(sitePath, ["apply", "--whitespace=nowarn", patch]);
     buildScripts = await runBuild(sitePath);
+    const repairEvaluationPath = await recordRepairEvaluation(sitePath, metadata);
     const applied: PatchMetadata = {
       ...metadata,
       patchStatus: "applied",
       lastApply: { timestamp: new Date().toISOString(), status: "passed" },
     };
     await writePatchMetadata(sitePath, applied);
-    await recordApply(sitePath, applied, { status: "passed", buildScripts, rollbackPath });
+    await recordApply(sitePath, applied, { status: "passed", buildScripts, rollbackPath, repairEvaluationPath });
     await rm(rollbackPath, { recursive: true, force: true });
     console.log("[apply] ✓ patch applied");
     console.log(buildScripts.length ? "[apply] ✓ build/typecheck passed" : "[apply] ✓ no build/typecheck script found");
