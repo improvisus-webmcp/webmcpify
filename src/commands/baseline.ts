@@ -5,13 +5,26 @@ import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import { scoreTasks } from "../lib/eval.js";
 
-const BASELINE_PROMPT = `
-Add WebMCP tool registrations to this site for its cart, roast filter,
-and checkout actions. This may be a plain site with no existing WebMCP
-registrations or MCP config; treat that as the starting condition, not a
-failure. After adding the tools, verify yourself that they work by calling
-them through your available browser tools. Report what you did.
-`;
+export const AUDIT_PROMPT = `
+Explore this website's codebase to understand its core user-facing actions
+(e.g. search, filtering, adding/removing items, submitting forms, checkout,
+or other primary interactions — infer these from the code, don't assume
+any specific domain).
+
+If WebMCP tools already exist in the codebase, verify each one by
+discovering it (list_webmcp_tools) and calling it through your available
+browser tools. Report tool discovery, each execution and its result, and
+any dynamic registration/unregistration behavior you observe (e.g. tools
+that appear or disappear based on app state).
+
+If no WebMCP tools exist yet, draft appropriate tool registrations for
+the site's key actions, choosing declarative (HTML form attributes) or
+imperative (navigator.modelContext) per action based on what fits best,
+then verify your own work the same way.
+
+Report: what actions you identified, what you found or built, and the
+verification result for each tool.
+`.trim();
 
 export async function runBaseline(opts: {
   path: string;
@@ -33,7 +46,7 @@ export async function runBaseline(opts: {
 
   await runAgent({
     provider,
-    prompt: BASELINE_PROMPT,
+    prompt: AUDIT_PROMPT,
     cwd: sitePath,
     allowedTools: "Read,Edit,Bash,mcp__chrome-devtools__*",
     mcpConfig: existsSync(mcpConfigPath) ? mcpConfigPath : undefined,

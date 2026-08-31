@@ -4,6 +4,15 @@ import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import { trajectoryPath } from "../lib/paths.js";
 
+export const GENERATE_ONLY_PROMPT = `
+Explore this website's codebase and identify its core user-facing actions.
+Draft WebMCP tool registrations for each one — declarative (HTML form
+attributes) for simple single-input actions, imperative
+(navigator.modelContext) for actions needing custom logic or state.
+Output as a diff only. Do not deploy, do not verify — that happens
+in a separate step.
+`.trim();
+
 export const GENERATION_METHODS = [
   "declarative",
   "imperative",
@@ -28,17 +37,14 @@ function resolveMethod(method?: string): GenerationMethod {
 function methodInstruction(method: GenerationMethod): string {
   switch (method) {
     case "declarative":
-      return `Use WebMCP's declarative approach. Derive tools from existing HTML
-<form> elements wherever possible, using the WebMCP declarative attributes and
-the form's submit behavior.`;
+      return `For this run, use the declarative approach for every drafted
+tool: prefer HTML form attributes and existing form submit behavior.`;
     case "imperative":
-      return `Use WebMCP's imperative approach. Register tools through
-navigator.modelContext with explicit input schemas and handler functions that
-call the site's existing application state and UI APIs.`;
+      return `For this run, use the imperative approach for every drafted
+tool: register through navigator.modelContext with explicit schemas and
+handlers.`;
     case "auto":
-      return `Choose the approach per action: use declarative registration for
-simple forms and imperative registration for actions requiring custom logic or
-application state, such as cart mutations and checkout.`;
+      return "";
   }
 }
 
@@ -58,15 +64,10 @@ export async function runGenerate(opts: GenerateOptions) {
   }
 
   const saveTo = trajectoryPath("generate.json");
-  const prompt = `Read this site's codebase and draft WebMCP tool registrations for
-its cart, roast filter, and checkout actions.
-
-${methodInstruction(method)}
-
-Return a unified diff containing the proposed source changes and a short
-explanation of each tool. Do not edit, deploy, or otherwise change any files;
-this is a draft for human review. If the site already has WebMCP registrations,
-preserve them and propose only the missing or incorrect pieces.`;
+  const strategy = methodInstruction(method);
+  const prompt = [GENERATE_ONLY_PROMPT, strategy]
+    .filter(Boolean)
+    .join("\n\n");
 
   console.log(
     `[generate] drafting WebMCP tools for ${sitePath} via ${provider} (${method})...`

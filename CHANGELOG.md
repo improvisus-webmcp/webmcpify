@@ -18,6 +18,8 @@ All notable changes to WebMCPify are documented here.
   isolated test run.
 - Isolated test, repair, and evaluation commands with separate raw agent and
   independently scored evaluation artifacts.
+- Baseline and generation prompts now infer the site's actions from its
+  codebase instead of assuming a coffee-store domain.
 
 ### Changed
 
