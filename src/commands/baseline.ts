@@ -4,12 +4,13 @@ import { fileURLToPath } from "node:url";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import { scoreTasks } from "../lib/eval.js";
+import {
+  DISCOVERY_GUIDANCE,
+  TOOL_PLACEMENT_GUIDANCE,
+} from "../lib/prompts.js";
 
 export const AUDIT_PROMPT = `
-Explore this website's codebase to understand its core user-facing actions
-(e.g. search, filtering, adding/removing items, submitting forms, checkout,
-or other primary interactions — infer these from the code, don't assume
-any specific domain).
+${DISCOVERY_GUIDANCE}
 
 If WebMCP tools already exist in the codebase, verify each one by
 discovering it (list_webmcp_tools) and calling it through your available
@@ -22,8 +23,11 @@ the site's key actions, choosing declarative (HTML form attributes) or
 imperative (navigator.modelContext) per action based on what fits best,
 then verify your own work the same way.
 
-Report: what actions you identified, what you found or built, and the
-verification result for each tool.
+${TOOL_PLACEMENT_GUIDANCE}
+
+Report the discovery findings before describing any changes: what actions you
+identified, what you found or built, and the verification result for each
+tool.
 `.trim();
 
 export async function runBaseline(opts: {

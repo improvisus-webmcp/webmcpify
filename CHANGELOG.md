@@ -39,21 +39,69 @@ The agent runner is intentionally provider-agnostic so baseline results are repr
 
 Cross-provider pass-rate comparisons are pending additional runs using the same site and task list.
 
-### Iteration: durable repair loop via Temporal
+### Iteration: added Temporal for durable execution — motivated by large-codebase failures
 
-**What I tried and why:** The plain-code repair loop had no resilience: a crash
-mid-loop (for example, an agent timeout or browser disconnect) could lose the
-workflow's progress and retry count. Temporal now provides an opt-in durable
-workflow around the existing scoring, generation, and review activities.
+**What I tried and why:** The initial repair loop was plain async code with a
+manual retry counter. Testing against a small site (`webmcp-coffee-store`)
+worked fine, but running the same pipeline against a larger, real-world
+codebase (`vercel/commerce`) exposed the actual problem: the underlying agent
+session timed out or errored partway through exploring a much bigger codebase.
+A plain retry restarted the entire attempt from scratch, losing the progress it
+had made and re-burning tokens re-reading files it had already seen.
 
-**Evidence:** Pending a live worker-kill test. After that test, record the task,
-worker interruption, resumed attempt number, and the Temporal UI event history
-here; no resume claim is made until it has been observed.
+**Evidence:** On `vercel/commerce`, the plain (`--no-durable`) `generate` call
+failed after approximately 300 seconds with `Command timed out after 300000ms`,
+having already consumed over 800K input tokens re-scanning the codebase. The
+retry started over from zero rather than resuming. Under `--durable`, the same
+failure was caught as a Temporal `ActivityTaskFailed` event, automatically
+retried according to `maximumAttempts: 3`, and the workflow state (which task
+and which attempt) persisted across the failure. This was confirmed through the
+Temporal Web UI event history.
 
-**Decision at that iteration:** Kept as an opt-in `--durable` path rather than
-replacing plain repair. The plain version remained the simpler default for
-reproductions that did not run Temporal. This per-run opt-in was later refined
-into the project-level setting described below.
+**Decision:** Kept Temporal opt-in through `init --with-temporal`. The gain is
+not in the model's reasoning; it is reliability. Durable execution matters
+specifically once codebase size pushes a single agent session close to its
+time/context limits, which is a realistic failure mode for any site larger than
+a small demo app. The plain version remains available for simpler runs and
+reproductions without Temporal.
+
+### Iteration: added placement and wiring guidance for generated tools
+
+**What I tried and why:** Generated WebMCP code can look correct while still
+being ineffective when an imperative registration is left in an unimported
+file or a declarative registration is separated from the markup it annotates.
+The generation, baseline, and repair prompts now require imperative tools to
+follow the site's existing organization and run on an app-load or route-load
+path, while declarative tools must be edited into the existing form or input
+component.
+
+**Evidence:** Each tool is now required to report its edited or created file,
+the reason for that location, and where its registration is wired at runtime.
+The generated diff also uses explicit file paths so the human review step can
+inspect the placement before approval.
+
+**Decision:** Kept the guidance as a shared prompt block used by every
+code-writing path, avoiding separate placement rules that could drift between
+generation, baseline, and repair.
+
+### Iteration: added focused discovery before tool drafting
+
+**What I tried and why:** Choosing tools by scanning arbitrary components can
+miss the site's real handlers and state while wasting tokens reading an entire
+repository file by file. On larger codebases, that unnecessary exploration
+also consumes the context window, increases runtime and repeated prompting,
+and leaves less context available for understanding the actual interactive
+surface. The prompts now require a focused discovery pass over the stack,
+README, sitemap/robots, routes, interactive elements, server handlers, and
+state sources before any tool is drafted.
+
+**Evidence:** The agent must report the detected stack, routes/pages, candidate
+actions, each action's real handler and state location, preconditions, and any
+actions deliberately skipped before presenting the diff. This keeps schemas
+and registrations grounded in the site's actual implementation.
+
+**Decision:** Kept discovery as a shared prompt block for generation, baseline,
+and repair. It narrows exploration while preserving domain-agnostic behavior.
 
 ### Iteration: made Temporal opt-in via `init --with-temporal`
 

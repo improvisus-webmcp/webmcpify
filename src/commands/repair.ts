@@ -6,6 +6,10 @@ import { resolveProvider } from "../lib/ai-provider.js";
 import { resolveDurable } from "../lib/config.js";
 import { writeChromeDevtoolsMcpConfig } from "../lib/mcp-config.js";
 import { trajectoryPath } from "../lib/paths.js";
+import {
+  DISCOVERY_GUIDANCE,
+  TOOL_PLACEMENT_GUIDANCE,
+} from "../lib/prompts.js";
 import type { StoredTestEvaluation } from "./test.js";
 
 export interface RepairOptions {
@@ -63,9 +67,18 @@ ${failures}
 
 Inspect the relevant source and the existing WebMCP registrations. Patch only
 the cause of these failures, preserve the approved tool names and schemas, and
-avoid unrelated refactors. After editing, use the browser MCP tools to verify
-the repaired behavior against ${evaluation.url}. Report the files changed and
-the verification result.`;
+avoid unrelated refactors.
+
+Before patching, perform the focused discovery below rather than scanning the
+entire repository file by file:
+
+${DISCOVERY_GUIDANCE}
+
+${TOOL_PLACEMENT_GUIDANCE}
+
+After editing, use the browser MCP tools to verify the repaired behavior
+against ${evaluation.url}. Report the files changed, placement and wiring for
+each affected tool, and the verification result.`;
 
   console.log(`[repair] patching ${failedTasks.length} failed task(s) via ${provider}...`);
 

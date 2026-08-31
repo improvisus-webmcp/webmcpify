@@ -3,14 +3,22 @@ import { existsSync } from "node:fs";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import { trajectoryPath } from "../lib/paths.js";
+import {
+  DISCOVERY_GUIDANCE,
+  TOOL_PLACEMENT_GUIDANCE,
+} from "../lib/prompts.js";
 
 export const GENERATE_ONLY_PROMPT = `
-Explore this website's codebase and identify its core user-facing actions.
-Draft WebMCP tool registrations for each one — declarative (HTML form
-attributes) for simple single-input actions, imperative
-(navigator.modelContext) for actions needing custom logic or state.
-Output as a diff only. Do not deploy, do not verify — that happens
-in a separate step.
+${DISCOVERY_GUIDANCE}
+
+After discovery, draft WebMCP tool registrations for the proposed actions —
+declarative (HTML form attributes) for simple single-input actions, imperative
+(navigator.modelContext) for actions needing custom logic or state. Report the
+discovery findings first, then output the proposed diff and a concise
+placement/wiring summary for each tool. Use explicit file paths in the diff.
+Do not deploy or verify — that happens in a separate step.
+
+${TOOL_PLACEMENT_GUIDANCE}
 `.trim();
 
 export const GENERATION_METHODS = [
