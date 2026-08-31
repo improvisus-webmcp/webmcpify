@@ -15,6 +15,7 @@
     "repair": "node dist/cli.js repair",
     "eval": "node dist/cli.js eval",
     "baseline": "node dist/cli.js baseline",
+    "temporal:worker": "node dist/temporal/worker.js",
     "dev": "tsx watch src/cli.ts",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
@@ -37,6 +38,9 @@
     "node": ">=18"
   },
   "dependencies": {
+    "@temporalio/client": "1.21.1",
+    "@temporalio/worker": "1.21.1",
+    "@temporalio/workflow": "1.21.1",
     "commander": "^12.1.0",
     "dotenv": "^17.4.2",
     "execa": "^10.0.1",

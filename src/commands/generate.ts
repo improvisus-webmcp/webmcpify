@@ -52,6 +52,7 @@ export interface GenerateOptions {
   path: string;
   provider?: string;
   method?: string;
+  context?: string;
 }
 
 export async function runGenerate(opts: GenerateOptions) {
@@ -65,7 +66,12 @@ export async function runGenerate(opts: GenerateOptions) {
 
   const saveTo = trajectoryPath("generate.json");
   const strategy = methodInstruction(method);
-  const prompt = [GENERATE_ONLY_PROMPT, strategy]
+  const failureContext = opts.context
+    ? `A previous independent test reported this failure. Use it to focus the
+drafted repair, but still inspect the code rather than assuming the diagnosis:
+${opts.context}`
+    : "";
+  const prompt = [GENERATE_ONLY_PROMPT, strategy, failureContext]
     .filter(Boolean)
     .join("\n\n");
 

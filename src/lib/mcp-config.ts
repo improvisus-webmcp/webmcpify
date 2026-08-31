@@ -9,7 +9,7 @@ const CHROME_DEVTOOLS_CONFIG = {
       args: [
         "-y",
         "chrome-devtools-mcp@1.7.0",
-        "--categoryExperimentalWebmcp",
+        "--category-experimental-webmcp",
         "--autoConnect",
         "--no-usage-statistics",
       ],

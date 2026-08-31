@@ -7,6 +7,7 @@ import { runTest } from "./commands/test.js";
 import { runRepair } from "./commands/repair.js";
 import { runEval } from "./commands/eval.js";
 import { runBaseline } from "./commands/baseline.js";
+import { runInit } from "./commands/init.js";
 
 const providerHelp =
   "AI provider to use: gemini, antigravity, claude, or codex";
@@ -19,6 +20,19 @@ program
     "Audit or generate WebMCP tool registrations for a site, verified by an isolated agent driving a real browser."
   )
   .version("0.1.0");
+
+program
+  .command("init")
+  .description("Create project settings for the repair loop")
+  .option(
+    "-p, --path <dir>",
+    "path to the site's codebase (defaults to the current directory)"
+  )
+  .option(
+    "--with-temporal",
+    "enable durable execution for the repair loop via Temporal"
+  )
+  .action(runInit);
 
 program
   .command("generate")
@@ -62,6 +76,11 @@ program
     "-p, --path <dir>",
     "path to the site's codebase (defaults to the current directory)"
   )
+  .option("-u, --url <url>", "URL of the running site (required with --durable)")
+  .option("-t, --task <task>", "scoring task name (required with --durable)")
+  .option("--max-repairs <number>", "maximum durable repair attempts", "3")
+  .option("--durable", "run the repair loop through Temporal")
+  .option("--no-durable", "force the plain repair loop for this run")
   .option("--provider <name>", providerHelp, "gemini")
   .action(runRepair);
 

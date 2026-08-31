@@ -4,9 +4,15 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { trajectoryPath } from "../lib/paths.js";
 
-interface ReviewOptions {
+export interface ReviewOptions {
   port?: string;
   path?: string;
+}
+
+export interface ReviewResult {
+  approved: boolean;
+  tools: string[];
+  approvalPath: string;
 }
 
 function htmlEscape(value: string): string {
@@ -57,8 +63,35 @@ function parsePort(value: string | undefined): number {
   return port;
 }
 
-export async function runReview(opts: ReviewOptions): Promise<void> {
-  const sitePath = path.resolve(opts.path ?? process.cwd());
+function approvedToolNames(requestBody: {
+  tools?: unknown;
+  additionalTools?: unknown;
+}): string[] {
+  const selected = Array.isArray(requestBody.tools)
+    ? requestBody.tools
+    : typeof requestBody.tools === "string"
+      ? [requestBody.tools]
+      : [];
+  const additional =
+    typeof requestBody.additionalTools === "string"
+      ? requestBody.additionalTools.split(/\r?\n/)
+      : [];
+
+  return [
+    ...new Set(
+      [...selected, ...additional]
+        .flatMap((value) => String(value).split(/[,\s]+/))
+        .map((value) => value.trim())
+        .filter((value) => /^[a-z][a-z0-9_-]*$/i.test(value))
+    ),
+  ];
+}
+
+/** Start the approval UI and resolve only after the owner approves or rejects. */
+export async function runReviewPrompt(
+  sitePath: string,
+  requestedPort?: string
+): Promise<ReviewResult> {
   const draftPath = trajectoryPath("generate.json");
   if (!existsSync(draftPath)) {
     throw new Error(
@@ -73,7 +106,7 @@ export async function runReview(opts: ReviewOptions): Promise<void> {
     ".webmcpify",
     "approved-tools.json"
   );
-  const port = parsePort(opts.port);
+  const port = parsePort(requestedPort);
   const app = express();
   app.use(express.urlencoded({ extended: false, limit: "64kb" }));
 
@@ -91,67 +124,81 @@ export async function runReview(opts: ReviewOptions): Promise<void> {
 
     response.type("html").send(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>WebMCPify review</title>
-<style>body{font:16px system-ui,sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem;color:#202124}pre{white-space:pre-wrap;background:#f5f5f5;padding:1rem;border-radius:8px;max-height:55vh;overflow:auto}label{display:block;margin:.5rem 0}textarea{width:100%;min-height:6rem}button{margin-top:1rem;padding:.6rem 1rem}</style>
+<style>body{font:16px system-ui,sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem;color:#202124}pre{white-space:pre-wrap;background:#f5f5f5;padding:1rem;border-radius:8px;max-height:55vh;overflow:auto}label{display:block;margin:.5rem 0}textarea{width:100%;min-height:6rem}button{margin-top:1rem;padding:.6rem 1rem}.reject{margin-left:.5rem}</style>
 </head><body><h1>Review WebMCP draft</h1>
 <p>Approve only tools you have inspected. Approval writes a local manifest; it does not deploy source changes.</p>
 <h2>Draft</h2><pre>${htmlEscape(draft)}</pre>
 <form method="post" action="/approve"><h2>Approved tools</h2>${checkboxes}
 <p>Additional or corrected names, one per line:</p><textarea name="additionalTools" placeholder="add_to_cart\ncheckout"></textarea>
-<br><button type="submit">Save approval</button></form></body></html>`);
+<br><button type="submit">Save approval</button><button class="reject" type="submit" formaction="/reject">Reject draft</button></form></body></html>`);
   });
 
-  app.post("/approve", async (request, response) => {
-    const selected = Array.isArray(request.body.tools)
-      ? request.body.tools
-      : typeof request.body.tools === "string"
-        ? [request.body.tools]
-        : [];
-    const additional =
-      typeof request.body.additionalTools === "string"
-        ? request.body.additionalTools.split(/\r?\n/)
-        : [];
-    const tools = [...selected, ...additional]
-      .flatMap((value) => String(value).split(/[,\s]+/))
-      .map((value) => value.trim())
-      .filter((value) => /^[a-z][a-z0-9_-]*$/i.test(value));
-    const uniqueTools = [...new Set(tools)];
+  let server: ReturnType<typeof app.listen> | undefined;
+  const decision = new Promise<ReviewResult>((resolve, reject) => {
+    const finish = (result: ReviewResult) => {
+      if (server) {
+        server.close(() => resolve(result));
+      } else {
+        resolve(result);
+      }
+    };
 
-    await mkdir(path.dirname(approvalPath), { recursive: true });
-    await writeFile(
-      approvalPath,
-      JSON.stringify(
-        {
-          version: 1,
-          approvedAt: new Date().toISOString(),
-          draftPath,
-          tools: uniqueTools,
-        },
-        null,
-        2
-      ) + "\n",
-      "utf8"
-    );
+    app.post("/approve", async (request, response) => {
+      try {
+        const tools = approvedToolNames(request.body);
+        await mkdir(path.dirname(approvalPath), { recursive: true });
+        await writeFile(
+          approvalPath,
+          JSON.stringify(
+            {
+              version: 1,
+              approvedAt: new Date().toISOString(),
+              draftPath,
+              tools,
+            },
+            null,
+            2
+          ) + "\n",
+          "utf8"
+        );
 
-    response.type("html").send(`<!doctype html><html lang="en"><body>
-<h1>Approval saved</h1><p>${uniqueTools.length} tool(s) approved for <code>${htmlEscape(
-      sitePath
-    )}</code>.</p><p>You can close this window.</p></body></html>`);
+        response.type("html").send(`<!doctype html><html lang="en"><body>
+<h1>Approval saved</h1><p>${tools.length} tool(s) approved for <code>${htmlEscape(
+          sitePath
+        )}</code>.</p><p>You can close this window.</p></body></html>`);
+        finish({ approved: true, tools, approvalPath });
+      } catch (error) {
+        response
+          .status(500)
+          .type("text")
+          .send(error instanceof Error ? error.message : String(error));
+      }
+    });
+
+    app.post("/reject", (_request, response) => {
+      response.type("html").send(`<!doctype html><html lang="en"><body>
+<h1>Draft rejected</h1><p>No approval manifest was changed.</p></body></html>`);
+      finish({ approved: false, tools: [], approvalPath });
+    });
+
+    const listener = app.listen(port, "127.0.0.1", () => {
+      server = listener;
+      console.log(`[review] approval UI: http://127.0.0.1:${port}`);
+      console.log(`[review] approved manifest will be saved to ${approvalPath}`);
+      console.log("[review] approve or reject the draft in the browser");
+    });
+    listener.once("error", reject);
   });
 
-  const server = await new Promise<ReturnType<typeof app.listen>>(
-    (resolve, reject) => {
-      const listener = app.listen(port, "127.0.0.1", () => resolve(listener));
-      listener.once("error", reject);
-    }
+  return decision;
+}
+
+export async function runReview(opts: ReviewOptions): Promise<void> {
+  const sitePath = path.resolve(opts.path ?? process.cwd());
+  const result = await runReviewPrompt(sitePath, opts.port);
+  console.log(
+    `[review] ${result.approved ? "approved" : "rejected"} ${
+      result.tools.length
+    } tool(s)`
   );
-
-  console.log(`[review] approval UI: http://127.0.0.1:${port}`);
-  console.log(`[review] approved manifest will be saved to ${approvalPath}`);
-  console.log("[review] stop the server with Ctrl-C after saving approval");
-
-  // Keep the command alive while the local UI is being used. Commander exits
-  // naturally once this server is closed by a signal or the embedding caller.
-  await new Promise<void>((resolve) => {
-    server.once("close", resolve);
-  });
 }
