@@ -14,6 +14,7 @@ import {
   writeTasks,
   type Task,
 } from "../lib/tasks.js";
+import { patchExists, patchMetadataPath, readPatchMetadata, writePatchMetadata } from "../lib/patches.js";
 
 export interface ReviewOptions {
   port?: string;
@@ -26,6 +27,7 @@ export interface ReviewResult {
   tasks: Task[];
   approvalPath: string;
   decisionPath?: string;
+  sourceDiff: { status: "approved" | "rejected"; runId?: string; timestamp: string };
 }
 
 function htmlEscape(value: string): string {
@@ -134,6 +136,14 @@ export async function runReviewPrompt(
     ".webmcpify",
     "approved-tools.json"
   );
+  const hasPatch = patchExists(sitePath);
+  const patchMetadata = hasPatch ? await readPatchMetadata(sitePath) : undefined;
+  if (!patchMetadata) {
+    throw new Error(
+      `No valid pending source patch found at ${patchMetadataPath(sitePath)}. Run "webmcpify generate" first.`
+    );
+  }
+  const patch = hasPatch ? await readFile(patchMetadata.patchPath, "utf8") : "";
   const port = parsePort(requestedPort);
   const app = express();
   app.use(express.urlencoded({ extended: false, limit: "64kb" }));
@@ -164,6 +174,14 @@ export async function runReviewPrompt(
       : `<p>No valid 5-6 task proposal was found. Edit the JSON below before approving.</p>`;
     const taskJson = htmlEscape(JSON.stringify(proposedTasks, null, 2));
 
+    const sourceSection = hasPatch
+      ? `<div class="section"><h2>Source changes</h2><p><strong>${htmlEscape(
+          patchMetadata.patchStatus
+        )}</strong> — ${htmlEscape(patchMetadata.changedFiles.join(", "))}</p><pre>${htmlEscape(
+          patch
+        )}</pre><label><input type="checkbox" name="approveSourceDiff" value="yes"> I approve this exact source patch</label></div>`
+      : `<div class="section"><h2>Source changes</h2><p>No valid pending source patch exists. Generation must produce one before approval.</p></div>`;
+
     response.type("html").send(`<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><title>WebMCPify review</title>
 <style>body{font:16px system-ui,sans-serif;max-width:1100px;margin:2rem auto;padding:0 1rem;color:#202124}pre{white-space:pre-wrap;background:#f5f5f5;padding:1rem;border-radius:8px;max-height:45vh;overflow:auto}label{display:block;margin:.5rem 0}textarea{width:100%;min-height:8rem;font:13px ui-monospace,monospace}code{display:inline-block;margin:.25rem 0;background:#f5f5f5;padding:.2rem}.section{border-top:1px solid #ddd;margin-top:1.5rem;padding-top:1rem}button{margin-top:1rem;padding:.6rem 1rem}.reject{margin-left:.5rem}</style>
@@ -174,7 +192,7 @@ export async function runReviewPrompt(
 <p>Additional or corrected names, one per line:</p><textarea name="additionalTools" placeholder="search_items\nsubmit_form"></textarea>
 <div class="section"><h2>Approved verification tasks</h2>${taskRows}
 <p>Edit the task definitions below if needed. Every task must have an observable verify expression.</p>
-<textarea name="tasksJson" aria-label="Tasks JSON">${taskJson}</textarea></div>
+<textarea name="tasksJson" aria-label="Tasks JSON">${taskJson}</textarea></div>${sourceSection}
 <br><button type="submit">Save approval</button><button class="reject" type="submit" formaction="/reject">Reject draft</button></form></body></html>`);
   });
 
@@ -191,6 +209,9 @@ export async function runReviewPrompt(
     app.post("/approve", async (request, response) => {
       try {
         const tools = approvedToolNames(request.body);
+        if (!hasPatch || request.body.approveSourceDiff !== "yes") {
+          throw new Error("Explicit approval of the pending source diff is required.");
+        }
         const taskJson =
           typeof request.body.tasksJson === "string"
             ? request.body.tasksJson
@@ -204,6 +225,15 @@ export async function runReviewPrompt(
           throw new Error("Approve at least one verification task.");
         }
         await writeTasks(sitePath, tasks);
+        const sourceDiff = {
+          status: "approved" as const,
+          runId: patchMetadata.runId,
+          timestamp: new Date().toISOString(),
+        };
+        await writePatchMetadata(sitePath, {
+          ...patchMetadata,
+          patchStatus: "approved",
+        });
         await mkdir(path.dirname(approvalPath), { recursive: true });
         await writeFile(
           approvalPath,
@@ -215,6 +245,7 @@ export async function runReviewPrompt(
               tools,
               tasks,
               tasksPath: projectTasksPath,
+              sourceDiff,
             },
             null,
             2
@@ -231,6 +262,7 @@ export async function runReviewPrompt(
             tasks,
             approvalPath,
             tasksPath: projectTasksPath,
+            sourceDiff,
             draftPath,
             reviewedAt: new Date().toISOString(),
           },
@@ -247,7 +279,7 @@ export async function runReviewPrompt(
 <h1>Approval saved</h1><p>${tools.length} tool(s) and ${tasks.length} task(s) approved for <code>${htmlEscape(
           sitePath
         )}</code>.</p><p>You can close this window.</p></body></html>`);
-        finish({ approved: true, tools, tasks, approvalPath, decisionPath });
+        finish({ approved: true, tools, tasks, approvalPath, decisionPath, sourceDiff });
       } catch (error) {
         response
           .status(500)
@@ -258,6 +290,13 @@ export async function runReviewPrompt(
 
     app.post("/reject", async (_request, response) => {
       try {
+        if (patchMetadata) {
+          await writePatchMetadata(sitePath, {
+            ...patchMetadata,
+            patchStatus: "rejected",
+            error: "Rejected during human review.",
+          });
+        }
         const decisionPath = await createTrajectoryArtifact(
           "review-decision",
           {
@@ -267,6 +306,7 @@ export async function runReviewPrompt(
             tasks: [],
             approvalPath,
             draftPath,
+            sourceDiff: { status: "rejected", timestamp: new Date().toISOString() },
             reviewedAt: new Date().toISOString(),
           },
           {
@@ -279,7 +319,7 @@ export async function runReviewPrompt(
         );
         response.type("html").send(`<!doctype html><html lang="en"><body>
 <h1>Draft rejected</h1><p>No approval manifest was changed.</p></body></html>`);
-        finish({ approved: false, tools: [], tasks: [], approvalPath, decisionPath });
+        finish({ approved: false, tools: [], tasks: [], approvalPath, decisionPath, sourceDiff: { status: "rejected", timestamp: new Date().toISOString() } });
       } catch (error) {
         response
           .status(500)

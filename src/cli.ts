@@ -8,6 +8,7 @@ import { runRepair } from "./commands/repair.js";
 import { runEval } from "./commands/eval.js";
 import { runBaseline } from "./commands/baseline.js";
 import { runInit } from "./commands/init.js";
+import { runApply } from "./commands/apply.js";
 
 const providerHelp =
   "AI provider to use: gemini, antigravity, claude, or codex";
@@ -55,6 +56,15 @@ program
   )
   .option("--port <number>", "port for the review server", "4173")
   .action(runReview);
+
+program
+  .command("apply")
+  .description("Apply an explicitly approved source patch and verify the build")
+  .option(
+    "-p, --path <dir>",
+    "path to the site's codebase (defaults to the current directory)"
+  )
+  .action(runApply);
 
 program
   .command("test")

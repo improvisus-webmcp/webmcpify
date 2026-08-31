@@ -8,6 +8,8 @@ import {
   TOOL_PLACEMENT_GUIDANCE,
 } from "../lib/prompts.js";
 import { createTrajectoryPath } from "../lib/trajectories.js";
+import { createPendingPatch } from "../lib/patches.js";
+import { readFile } from "node:fs/promises";
 
 export const GENERATE_ONLY_PROMPT = `
 ${DISCOVERY_GUIDANCE}
@@ -108,5 +110,18 @@ ${opts.context}`
     },
   });
 
-  console.log(`[generate] draft saved to ${saveTo}`);
+  try {
+    const patch = await createPendingPatch(
+      sitePath,
+      await readFile(saveTo, "utf8"),
+      saveTo,
+    );
+    console.log(`[generate] draft saved to ${saveTo}`);
+    console.log(`[generate] generated source changes: ${patch.changedFiles.join(", ")}`);
+    console.log(`[generate] patch: ${patch.patchPath}`);
+    console.log("[generate] status: awaiting review");
+  } catch (error) {
+    console.error(`[generate] ${error instanceof Error ? error.message : String(error)}`);
+    throw error;
+  }
 }

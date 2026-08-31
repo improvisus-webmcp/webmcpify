@@ -17,7 +17,9 @@ The normal evidence flow is:
 generate
    │  discovery + proposed diff + task definitions
    ▼
-review-decision ──► approved-tools.json + tasks.json
+   review-decision ──► approved-tools.json + tasks.json + approved patch
+        │
+        └──► apply ──► build/typecheck ──► apply artifact
    │
    ├──► baseline ──► baseline-eval
    │
@@ -47,6 +49,8 @@ The agent's report and the independent evaluator are deliberately separate:
 | --- | --- | --- |
 | `generate-*.json` | Read-only provider output: discovery findings, proposed WebMCP diff, placement/wiring notes, and a 5–6 task proposal. | `generate-*.meta.json` |
 | `review-decision-*.json` | Human approval or rejection, selected tools, edited task definitions, and paths to the draft and project approval files. | `draftPath`, `approvalPath`, `tasksPath` |
+| `patch-*.json` | Extracted unified source diff, changed files, source fingerprint, and patch status. | `sourceTrajectory`, `patchPath` |
+| `apply-*.json` | Patch application, rollback, and build/typecheck result. | `runId`, `patchPath` |
 | `baseline-*.json` | Source-editing, self-verifying baseline agent output. | `baseline-*.meta.json` |
 | `baseline-eval-*.json` | Independent baseline score containing `tasks` and `scores`. | `sourceTrajectory` |
 | `test-*.json` | Source-blind, MCP-only test-agent output for all approved tasks. | `test-*.meta.json` |

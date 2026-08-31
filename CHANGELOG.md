@@ -4,6 +4,24 @@ All notable changes to WebMCPify are documented here.
 
 ## [Unreleased]
 
+### Added: approved source-diff application pipeline
+
+Generation now extracts and validates the provider's real unified diff into
+the target project's `.webmcpify/pending-diff.patch`, with commit, working-tree,
+changed-file, and run metadata in `pending-diff.meta.json`. Review displays the
+exact patch and requires an explicit source-diff approval tied to that run.
+
+The new `apply` command validates the approval and source fingerprint, applies
+the patch through Git, runs available `typecheck` and `build` scripts, and
+records the patch/apply/build evidence in the existing trajectory system. It
+creates per-file rollback snapshots and restores them if application or build
+verification fails.
+
+The implementation deliberately uses Git as the safety boundary instead of
+introducing a second patch/version-control system. Focused lifecycle
+verification covers successful application, missing approval, invalid patches,
+and failed-build rollback; `pnpm tsc --noEmit` and `pnpm build` also pass.
+
 ### Added
 
 - Provider-agnostic baseline execution for Gemini, Claude Code, Codex, and Antigravity CLI (`agy`).

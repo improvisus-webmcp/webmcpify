@@ -132,11 +132,22 @@ Review the draft in the local approval page:
 node dist/cli.js review --path ./target-site
 ```
 
-Open the printed localhost URL and approve only the tools and verify
-expressions you inspected. The tool manifest is saved to
-`./target-site/.webmcpify/approved-tools.json`, and the approved task list is
-saved to `./target-site/tasks.json`. The current review step records these
-decisions and does not automatically apply the generated source diff.
+Open the printed localhost URL and approve only the tools, verify expressions,
+and exact source patch you inspected. The tool manifest is saved to
+`./target-site/.webmcpify/approved-tools.json`, the approved task list is
+saved to `./target-site/tasks.json`, and the source decision is tied to the
+patch run ID.
+
+Apply the approved source changes from the target project:
+
+```bash
+node dist/cli.js apply --path ./target-site
+```
+
+`apply` checks the approval and recorded Git source fingerprint, validates and
+applies `.webmcpify/pending-diff.patch`, runs available `typecheck` and
+`build` scripts, and restores the changed files if application or build
+verification fails. Its result is recorded as an `apply-*` trajectory artifact.
 
 Then run the isolated audit and independent score:
 
@@ -266,10 +277,13 @@ The core pipeline is implemented, but these boundaries are important when
 interpreting the results:
 
 - `generate` is read-only and saves the agent's draft trajectory; it does not
-  write a pending patch or modify the target site.
+  modify source, but it writes the extracted pending patch and metadata under
+  the target project's `.webmcpify` directory.
 - `review` records approved tool names and approved task definitions for the
-  isolated test, writes `tasks.json`, and does not yet apply approved source
-  changes.
+  isolated test, writes `tasks.json`, and requires explicit approval of the
+  exact source patch.
+- `apply` requires that source approval, uses Git for validation and rollback,
+  and runs available project build/typecheck scripts before reporting success.
 - `test` is source-blind and MCP-only; the scorer evaluates the approved task
   expressions, but the expressions themselves still require careful human
   review because they run in the live page.
