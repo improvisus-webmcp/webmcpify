@@ -4,6 +4,22 @@ All notable changes to WebMCPify are documented here.
 
 ## [Unreleased]
 
+### Added: structured human review and verification integrity
+
+Review now consumes `.webmcpify/proposed-tools.json`, displays each complete
+structured tool proposal, allows practical JSON edits, and persists the final
+approved definitions in `.webmcpify/approved-tools.json`. Approval remains an
+explicit human decision; rejection leaves the prior manifest unchanged.
+
+Task verification is now checked for empty, syntactically invalid, and trivial
+expressions. Review surfaces statically detectable missing selectors, state,
+and tool references as warnings without introducing a security sandbox.
+
+The focused review fixture verified structured tool display/edit persistence,
+approval and rejection, valid task persistence, and verification error/warning
+detection. `pnpm tsc --noEmit` and `pnpm build` pass. No live AI provider is
+required for this phase.
+
 ### Added: structured tool generation
 
 Generation now consumes the target project's structured `discovery.json` and

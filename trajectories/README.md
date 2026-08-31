@@ -50,7 +50,7 @@ The agent's report and the independent evaluator are deliberately separate:
 | `generate-*.json` | Read-only provider output: discovery findings, structured tool proposal, proposed WebMCP diff, placement/wiring notes, and a 5–6 task proposal. | `generate-*.meta.json` |
 | `discovery-*.json` | Structured static discovery snapshot for one target project. | `discoveryPath`, `sitePath` |
 | `proposed-tools-*.json` | Validated structured WebMCP tool proposals derived from discovery. | `discoveryPath`, `sourceTrajectory`, `proposedToolsPath` |
-| `review-decision-*.json` | Human approval or rejection, selected tools, edited task definitions, and paths to the draft and project approval files. | `draftPath`, `approvalPath`, `tasksPath` |
+| `review-decision-*.json` | Human approval or rejection, full selected/edited tool definitions, edited task definitions, verification findings, and paths to the draft and project approval files. | `draftPath`, `approvalPath`, `tasksPath`, `proposedToolsPath` |
 | `patch-*.json` | Extracted unified source diff, changed files, source fingerprint, and patch status. | `sourceTrajectory`, `patchPath` |
 | `apply-*.json` | Patch application, rollback, and build/typecheck result. | `runId`, `patchPath` |
 | `baseline-*.json` | Source-editing, self-verifying baseline agent output. | `baseline-*.meta.json` |
@@ -122,11 +122,14 @@ Independent score artifacts use this shape:
 file edit does not change what that score meant. A verifier that throws is
 recorded as a failed result with `detail` beginning `verify threw:`.
 
-Review decisions contain `approved`, `tools`, and `tasks`. On approval, the
-same approved task definitions are written to the target project's
-`tasks.json`; the tool manifest is written to
-`<site>/.webmcpify/approved-tools.json`. Rejection records an explicit
-`approved: false` checkpoint and does not modify an existing approval manifest.
+Review decisions contain `approved`, full structured `tools`, and `tasks`. On
+approval, the same approved task definitions are written to the target
+project's `tasks.json`; the complete tool definitions are written to
+`<site>/.webmcpify/approved-tools.json`. Verification syntax/triviality errors
+block approval, while statically detectable selector/state/tool mismatches are
+recorded as review warnings for the human checkpoint. Rejection records an
+explicit `approved: false` checkpoint and does not modify an existing approval
+manifest.
 
 ## How to inspect a run
 
@@ -189,3 +192,17 @@ fit the columns belong in the sidecar. A row has this shape:
 | — | generate | failed | codex | — | [generate-2026-08-31T14-21-44-513Z-fdfd5b06.json](./generate-2026-08-31T14-21-44-513Z-fdfd5b06.json) | [metadata](./generate-2026-08-31T14-21-44-513Z-fdfd5b06.meta.json) |
 | — | proposed-tools | completed | — | — | [proposed-tools-2026-08-31T14-22-51-305Z-861912eb.json](./proposed-tools-2026-08-31T14-22-51-305Z-861912eb.json) | [metadata](./proposed-tools-2026-08-31T14-22-51-305Z-861912eb.meta.json) |
 | — | proposed-tools | completed | — | — | [proposed-tools-2026-08-31T14-22-51-367Z-6ed024d5.json](./proposed-tools-2026-08-31T14-22-51-367Z-6ed024d5.json) | [metadata](./proposed-tools-2026-08-31T14-22-51-367Z-6ed024d5.meta.json) |
+| — | proposed-tools | completed | — | — | [proposed-tools-2026-08-31T14-30-10-516Z-1326bce3.json](./proposed-tools-2026-08-31T14-30-10-516Z-1326bce3.json) | [metadata](./proposed-tools-2026-08-31T14-30-10-516Z-1326bce3.meta.json) |
+| — | generate | completed | fixture | — | [generate-2026-08-31T14-30-10-526Z-7931119b.json](./generate-2026-08-31T14-30-10-526Z-7931119b.json) | [metadata](./generate-2026-08-31T14-30-10-526Z-7931119b.meta.json) |
+| — | proposed-tools | completed | — | — | [proposed-tools-2026-08-31T14-30-21-262Z-f7435dcb.json](./proposed-tools-2026-08-31T14-30-21-262Z-f7435dcb.json) | [metadata](./proposed-tools-2026-08-31T14-30-21-262Z-f7435dcb.meta.json) |
+| — | generate | completed | fixture | — | [generate-2026-08-31T14-30-21-271Z-faba4cc0.json](./generate-2026-08-31T14-30-21-271Z-faba4cc0.json) | [metadata](./generate-2026-08-31T14-30-21-271Z-faba4cc0.meta.json) |
+| — | review-decision | completed | — | — | [review-decision-2026-08-31T14-30-21-498Z-9ebdc472.json](./review-decision-2026-08-31T14-30-21-498Z-9ebdc472.json) | [metadata](./review-decision-2026-08-31T14-30-21-498Z-9ebdc472.meta.json) |
+| — | review-decision | completed | — | — | [review-decision-2026-08-31T14-30-21-656Z-340b39ac.json](./review-decision-2026-08-31T14-30-21-656Z-340b39ac.json) | [metadata](./review-decision-2026-08-31T14-30-21-656Z-340b39ac.meta.json) |
+| — | proposed-tools | completed | — | — | [proposed-tools-2026-08-31T14-32-56-584Z-4cfe1b2d.json](./proposed-tools-2026-08-31T14-32-56-584Z-4cfe1b2d.json) | [metadata](./proposed-tools-2026-08-31T14-32-56-584Z-4cfe1b2d.meta.json) |
+| — | proposed-tools | completed | — | — | [proposed-tools-2026-08-31T14-32-56-673Z-45f397e6.json](./proposed-tools-2026-08-31T14-32-56-673Z-45f397e6.json) | [metadata](./proposed-tools-2026-08-31T14-32-56-673Z-45f397e6.meta.json) |
+| — | proposed-tools | completed | — | — | [proposed-tools-2026-08-31T14-33-00-735Z-cb56ea9f.json](./proposed-tools-2026-08-31T14-33-00-735Z-cb56ea9f.json) | [metadata](./proposed-tools-2026-08-31T14-33-00-735Z-cb56ea9f.meta.json) |
+| — | generate | completed | fixture | — | [generate-2026-08-31T14-33-00-744Z-62b0111a.json](./generate-2026-08-31T14-33-00-744Z-62b0111a.json) | [metadata](./generate-2026-08-31T14-33-00-744Z-62b0111a.meta.json) |
+| — | proposed-tools | completed | — | — | [proposed-tools-2026-08-31T14-33-16-450Z-11fe4efa.json](./proposed-tools-2026-08-31T14-33-16-450Z-11fe4efa.json) | [metadata](./proposed-tools-2026-08-31T14-33-16-450Z-11fe4efa.meta.json) |
+| — | generate | completed | fixture | — | [generate-2026-08-31T14-33-16-455Z-7bc3e020.json](./generate-2026-08-31T14-33-16-455Z-7bc3e020.json) | [metadata](./generate-2026-08-31T14-33-16-455Z-7bc3e020.meta.json) |
+| — | review-decision | completed | — | — | [review-decision-2026-08-31T14-33-16-676Z-dc88b8d8.json](./review-decision-2026-08-31T14-33-16-676Z-dc88b8d8.json) | [metadata](./review-decision-2026-08-31T14-33-16-676Z-dc88b8d8.meta.json) |
+| — | review-decision | completed | — | — | [review-decision-2026-08-31T14-33-16-834Z-3e2c358c.json](./review-decision-2026-08-31T14-33-16-834Z-3e2c358c.json) | [metadata](./review-decision-2026-08-31T14-33-16-834Z-3e2c358c.meta.json) |

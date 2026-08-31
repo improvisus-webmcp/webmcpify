@@ -1,11 +1,16 @@
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { validateVerifyExpression, verificationErrors, type VerificationContext, type VerificationIssue } from "./task-verification.js";
 
 export interface Task {
   id: string;
   description: string;
   verify: string;
+}
+
+export function taskVerificationIssues(task: Task, context: VerificationContext = {}): VerificationIssue[] {
+  return validateVerifyExpression(task.verify, task.description, context);
 }
 
 const MIN_TASKS = 5;
@@ -52,6 +57,9 @@ export function validateTasks(value: unknown): Task[] {
     if (typeof task.verify !== "string" || !task.verify.trim()) {
       throw new Error(`Task "${id}" must have a verify expression.`);
     }
+
+    const issues = verificationErrors(taskVerificationIssues({ id, description: task.description.trim(), verify: task.verify.trim() }));
+    if (issues.length) throw new Error(`Task "${id}" has invalid verification: ${issues.map((issue) => issue.message).join(" ")}`);
 
     return {
       id,

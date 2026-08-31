@@ -15,6 +15,8 @@ import {
   type Task,
 } from "../lib/tasks.js";
 import { patchExists, patchMetadataPath, readPatchMetadata, writePatchMetadata } from "../lib/patches.js";
+import { proposedToolsPath, validateProposedTools, loadDiscovery, type ProposedTool } from "../lib/tool-proposals.js";
+import { taskVerificationIssues } from "../lib/tasks.js";
 
 export interface ReviewOptions {
   port?: string;
@@ -28,6 +30,7 @@ export interface ReviewResult {
   approvalPath: string;
   decisionPath?: string;
   sourceDiff: { status: "approved" | "rejected"; runId?: string; timestamp: string };
+  approvedTools: ProposedTool[];
 }
 
 function htmlEscape(value: string): string {
@@ -55,21 +58,6 @@ function draftText(raw: string): string {
   }
 }
 
-function draftToolNames(draft: string): string[] {
-  const names = new Set<string>();
-  const patterns = [
-    /(?:tool\s*name|toolname)\s*[:=]\s*[`"']?([a-z][a-z0-9_-]*)/gi,
-    /(?:registerTool|register)\s*\(\s*[`"']([a-z][a-z0-9_-]*)[`"']/gi,
-  ];
-
-  for (const pattern of patterns) {
-    for (const match of draft.matchAll(pattern)) {
-      if (match[1]) names.add(match[1]);
-    }
-  }
-  return [...names];
-}
-
 function parsePort(value: string | undefined): number {
   const port = Number(value ?? "4173");
   if (!Number.isInteger(port) || port < 1 || port > 65_535) {
@@ -78,35 +66,11 @@ function parsePort(value: string | undefined): number {
   return port;
 }
 
-function approvedToolNames(requestBody: {
-  tools?: unknown;
-  additionalTools?: unknown;
-}): string[] {
-  const selected = Array.isArray(requestBody.tools)
-    ? requestBody.tools
-    : typeof requestBody.tools === "string"
-      ? [requestBody.tools]
-      : [];
-  const additional =
-    typeof requestBody.additionalTools === "string"
-      ? requestBody.additionalTools.split(/\r?\n/)
-      : [];
-
-  return [
-    ...new Set(
-      [...selected, ...additional]
-        .flatMap((value) => String(value).split(/[,\s]+/))
-        .map((value) => value.trim())
-        .filter((value) => /^[a-z][a-z0-9_-]*$/i.test(value))
-    ),
-  ];
-}
-
-function approvedTaskIds(requestBody: { taskIds?: unknown }): string[] {
-  const selected = Array.isArray(requestBody.taskIds)
-    ? requestBody.taskIds
-    : typeof requestBody.taskIds === "string"
-      ? [requestBody.taskIds]
+function selectedIds(requestBody: { ids?: unknown }): string[] {
+  const selected = Array.isArray(requestBody.ids)
+    ? requestBody.ids
+    : typeof requestBody.ids === "string"
+      ? [requestBody.ids]
       : [];
   return [
     ...new Set(selected.map((value) => String(value).trim()).filter(Boolean)),
@@ -127,7 +91,16 @@ export async function runReviewPrompt(
   }
 
   const draft = draftText(await readFile(draftPath, "utf8"));
-  const toolNames = draftToolNames(draft);
+  const discovery = await loadDiscovery(sitePath);
+  const proposalFile = proposedToolsPath(sitePath);
+  if (!existsSync(proposalFile)) throw new Error(`No structured tool proposal found at ${proposalFile}. Run "webmcpify generate" first.`);
+  let proposedTools: ProposedTool[];
+  try {
+    const proposal = JSON.parse(await readFile(proposalFile, "utf8")) as unknown;
+    proposedTools = validateProposedTools(proposal, discovery);
+  } catch (error) {
+    throw new Error(`Could not load structured tool proposals: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const proposedTasks =
     extractTasksFromText(draft) ?? (await loadTasksIfPresent(sitePath)) ?? [];
   const projectTasksPath = tasksPath(sitePath);
@@ -149,16 +122,18 @@ export async function runReviewPrompt(
   app.use(express.urlencoded({ extended: false, limit: "64kb" }));
 
   app.get("/", (_request, response) => {
-    const checkboxes = toolNames.length
-      ? toolNames
+    const checkboxes = proposedTools.length
+      ? proposedTools
           .map(
-            (name) =>
-              `<label><input type="checkbox" name="tools" value="${htmlEscape(
-                name
-              )}" checked> ${htmlEscape(name)}</label>`
+            (tool) =>
+              `<label><input type="checkbox" name="toolIds" value="${htmlEscape(
+                tool.id
+              )}" checked> <strong>${htmlEscape(tool.name)}</strong> — ${htmlEscape(tool.description)}</label>`
           )
           .join("\n")
-      : `<p>No tool names could be extracted automatically. Enter approved names below.</p>`;
+      : `<p>No structured tool proposals were found.</p>`;
+    const toolJson = htmlEscape(JSON.stringify(proposedTools, null, 2));
+    const toolDetails = proposedTools.map((tool) => `<details><summary>${htmlEscape(tool.name)}</summary><pre>${htmlEscape(JSON.stringify(tool, null, 2))}</pre></details>`).join("\n");
 
     const taskRows = proposedTasks.length
       ? proposedTasks
@@ -168,7 +143,7 @@ export async function runReviewPrompt(
                 task.id
               )}" checked> <strong>${htmlEscape(task.id)}</strong>: ${htmlEscape(
                 task.description
-              )}<br><code>${htmlEscape(task.verify)}</code></label>`
+              )}<br><code>${htmlEscape(task.verify)}</code>${taskVerificationIssues(task, { discovery, toolNames: proposedTools.map((tool) => tool.name) }).map((issue) => `<br><em>${htmlEscape(issue.severity.toUpperCase())}: ${htmlEscape(issue.message)}</em>`).join("")}</label>`
           )
           .join("\n")
       : `<p>No valid 5-6 task proposal was found. Edit the JSON below before approving.</p>`;
@@ -189,7 +164,7 @@ export async function runReviewPrompt(
 <p>Approve only tools and verification tasks you have inspected. Approval writes a local manifest and <code>tasks.json</code>; it does not deploy source changes.</p>
 <h2>Draft</h2><pre>${htmlEscape(draft)}</pre>
 <form method="post" action="/approve"><h2>Approved tools</h2>${checkboxes}
-<p>Additional or corrected names, one per line:</p><textarea name="additionalTools" placeholder="search_items\nsubmit_form"></textarea>
+<details><summary>Inspect structured tool definitions</summary>${toolDetails}<p>Edit the definitions below where needed. Keep each approved tool's <code>id</code> to match its checkbox.</p><textarea name="toolsJson" aria-label="Tools JSON">${toolJson}</textarea></details>
 <div class="section"><h2>Approved verification tasks</h2>${taskRows}
 <p>Edit the task definitions below if needed. Every task must have an observable verify expression.</p>
 <textarea name="tasksJson" aria-label="Tasks JSON">${taskJson}</textarea></div>${sourceSection}
@@ -208,7 +183,10 @@ export async function runReviewPrompt(
 
     app.post("/approve", async (request, response) => {
       try {
-        const tools = approvedToolNames(request.body);
+        const selectedToolIds = selectedIds({ ids: request.body.toolIds });
+        const toolJson = typeof request.body.toolsJson === "string" ? request.body.toolsJson : JSON.stringify(proposedTools);
+        const editedTools = validateProposedTools(JSON.parse(toolJson), discovery);
+        const tools = proposedTools.length ? editedTools.filter((tool) => selectedToolIds.includes(tool.id)) : editedTools;
         if (!hasPatch || request.body.approveSourceDiff !== "yes") {
           throw new Error("Explicit approval of the pending source diff is required.");
         }
@@ -217,7 +195,7 @@ export async function runReviewPrompt(
             ? request.body.tasksJson
             : JSON.stringify(proposedTasks);
         const editedTasks = parseTasksJson(taskJson);
-        const selectedTaskIds = approvedTaskIds(request.body);
+        const selectedTaskIds = selectedIds({ ids: request.body.taskIds });
         const tasks = proposedTasks.length
           ? editedTasks.filter((task) => selectedTaskIds.includes(task.id))
           : editedTasks;
@@ -243,8 +221,10 @@ export async function runReviewPrompt(
               approvedAt: new Date().toISOString(),
               draftPath,
               tools,
+              toolNames: tools.map((tool) => tool.name),
               tasks,
               tasksPath: projectTasksPath,
+              proposedToolsPath: proposalFile,
               sourceDiff,
             },
             null,
@@ -259,9 +239,11 @@ export async function runReviewPrompt(
             version: 1,
             approved: true,
             tools,
+            toolNames: tools.map((tool) => tool.name),
             tasks,
             approvalPath,
             tasksPath: projectTasksPath,
+            proposedToolsPath: proposalFile,
             sourceDiff,
             draftPath,
             reviewedAt: new Date().toISOString(),
@@ -279,7 +261,7 @@ export async function runReviewPrompt(
 <h1>Approval saved</h1><p>${tools.length} tool(s) and ${tasks.length} task(s) approved for <code>${htmlEscape(
           sitePath
         )}</code>.</p><p>You can close this window.</p></body></html>`);
-        finish({ approved: true, tools, tasks, approvalPath, decisionPath, sourceDiff });
+        finish({ approved: true, tools: tools.map((tool) => tool.name), approvedTools: tools, tasks, approvalPath, decisionPath, sourceDiff });
       } catch (error) {
         response
           .status(500)
@@ -306,6 +288,7 @@ export async function runReviewPrompt(
             tasks: [],
             approvalPath,
             draftPath,
+            proposedToolsPath: proposalFile,
             sourceDiff: { status: "rejected", timestamp: new Date().toISOString() },
             reviewedAt: new Date().toISOString(),
           },
@@ -319,7 +302,7 @@ export async function runReviewPrompt(
         );
         response.type("html").send(`<!doctype html><html lang="en"><body>
 <h1>Draft rejected</h1><p>No approval manifest was changed.</p></body></html>`);
-        finish({ approved: false, tools: [], tasks: [], approvalPath, decisionPath, sourceDiff: { status: "rejected", timestamp: new Date().toISOString() } });
+        finish({ approved: false, tools: [], approvedTools: [], tasks: [], approvalPath, decisionPath, sourceDiff: { status: "rejected", timestamp: new Date().toISOString() } });
       } catch (error) {
         response
           .status(500)
