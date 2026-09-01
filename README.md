@@ -86,8 +86,8 @@ Generated artifacts include:
 ```text
 target-site/.webmcpify/proposed-tools.json
 target-site/.webmcpify/pending-diff.patch
-trajectories/generate-*.json
-trajectories/generate-*.meta.json
+target-site/.webmcpify/trajectories/generate-*.json
+target-site/.webmcpify/trajectories/generate-*.meta.json
 ```
 
 ---
@@ -345,6 +345,12 @@ During local development, the equivalent `pnpm webmcpify ...` commands can be us
 # 6. Antigravity Setup
 
 The primary end-to-end testing environment for this submission is Antigravity.
+
+The provider is never given the target checkout as its working directory.
+Generation, baseline, and browser-agent evaluation run from a disposable copy
+or an empty disposable workspace. Repair may edit only its disposable copy to
+produce a candidate diff. The target project is modified exclusively by
+WebMCPify's explicit human-review and `apply` stages.
 
 Before running the browser-agent tests, Chrome DevTools MCP must be available to Antigravity.
 

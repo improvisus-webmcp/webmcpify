@@ -57,6 +57,19 @@ function failedSummary(tasks: Task[], error: unknown): TaskScoreSummary {
   return { passed: 0, total: tasks.length, results: tasks.map((task) => ({ task: task.id, passed: false, detail })) };
 }
 
+function validateTargetUrl(value: string): string {
+  let parsed: URL;
+  try {
+    parsed = new URL(value);
+  } catch {
+    throw new Error(`Invalid target URL "${value}". Use a plain URL such as http://localhost:5173 (not Markdown link syntax).`);
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new Error(`Unsupported target URL protocol "${parsed.protocol}". Use http:// or https://.`);
+  }
+  return parsed.toString().replace(/\/$/, "");
+}
+
 async function readEvaluation(sitePath: string, role: "baseline-eval" | "test-eval"): Promise<{ path: string; value: StoredTestEvaluation }> {
   const evaluationPath = await latestTrajectoryPath(role, sitePath);
   if (!evaluationPath || !existsSync(evaluationPath)) throw new Error(`No project-scoped ${role} artifact was recorded for ${sitePath}.`);
@@ -88,7 +101,7 @@ async function runTemporalLevel(sitePath: string, url: string, provider: string,
 
 export async function runFinalEval(opts: FinalEvalOptions): Promise<FinalEvalResult> {
   const sitePath = path.resolve(opts.path);
-  const url = opts.url ?? process.env.WEBMCPIFY_URL ?? "http://localhost:3000";
+  const url = validateTargetUrl(opts.url ?? process.env.WEBMCPIFY_URL ?? "http://localhost:3000");
   const provider = opts.provider ?? "antigravity";
   const runId = randomUUID();
 
@@ -97,6 +110,7 @@ export async function runFinalEval(opts: FinalEvalOptions): Promise<FinalEvalRes
   console.log("[final-eval] preparing discovery, structured proposals, and human review...");
   await runGenerate({ path: sitePath, provider, trajectoryMetadata: { finalEvalRunId: runId, level: "preparation" } });
   const review = await runReviewPrompt(sitePath, opts.reviewPort ?? "4173", { finalEvalRunId: runId, level: "preparation" });
+  console.log(`[final-eval] review decision: ${review.approved ? "APPROVED" : "REJECTED"}`);
   if (!review.approved) throw new Error("Final evaluation stopped because the WebMCP proposal was rejected.");
 
   const tasks = await loadApprovedTasks(sitePath);
@@ -141,10 +155,12 @@ export async function runFinalEval(opts: FinalEvalOptions): Promise<FinalEvalRes
   }
 
   console.log("[final-eval] Level 3 — durable Temporal evaluation...");
+  console.log(`[final-eval] connecting to Temporal at ${process.env.WEBMCPIFY_TEMPORAL_ADDRESS ?? "localhost:7233"}; worker task queue: ${process.env.WEBMCPIFY_TEMPORAL_TASK_QUEUE ?? "webmcpify"}`);
   let temporalLevel: LevelResult;
   try {
     temporalLevel = await runTemporalLevel(sitePath, url, provider, tasks, runId, taskSetId);
   } catch (error) {
+    console.error(`[final-eval] Temporal level failed: ${error instanceof Error ? error.message : String(error)}`);
     temporalLevel = { level: "temporal", runId, targetProject: sitePath, taskSetId, tasks, scores: failedSummary(tasks, error), status: "failed", error: error instanceof Error ? error.message : String(error) };
   }
 

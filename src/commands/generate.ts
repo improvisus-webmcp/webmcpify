@@ -14,6 +14,7 @@ import { createPendingPatch } from "../lib/patches.js";
 import { readFile } from "node:fs/promises";
 import { discoveryPath, runDiscovery } from "../lib/discovery.js";
 import { extractAndValidateProposedTools, writeProposedTools } from "../lib/tool-proposals.js";
+import { createAgentWorkspace, removeAgentWorkspace } from "../lib/agent-workspace.js";
 
 export const GENERATE_ONLY_PROMPT = `
 ${DISCOVERY_GUIDANCE}
@@ -99,7 +100,7 @@ export async function runGenerate(opts: GenerateOptions) {
 
   const discovery = await runDiscovery(sitePath);
 
-  const saveTo = createTrajectoryPath("generate");
+  const saveTo = createTrajectoryPath("generate", undefined, sitePath);
   const strategy = methodInstruction(method);
   const failureContext = opts.context
     ? `A previous independent test reported this failure. Use it to focus the
@@ -114,23 +115,28 @@ ${opts.context}`
     `[generate] drafting WebMCP tools for ${sitePath} via ${provider} (${method})...`
   );
 
-  await runAgent({
-    provider,
-    prompt,
-    cwd: sitePath,
-    // Generation is a draft stage. The prompt and this provider-specific
-    // permission hint both keep the site untouched until review/approval.
-    allowedTools: "Read",
-    saveTo,
-    trajectoryMetadata: {
-      role: "generate",
-      sitePath,
-      method,
-      context: opts.context,
-      discoveryPath: discoveryPath(sitePath),
-      ...opts.trajectoryMetadata,
-    },
-  });
+  const agentWorkspace = await createAgentWorkspace(sitePath);
+  try {
+    await runAgent({
+      provider,
+      prompt,
+      cwd: agentWorkspace,
+      // Providers may ignore permission hints. The disposable workspace is
+      // the actual safety boundary keeping the target checkout untouched.
+      allowedTools: "Read",
+      saveTo,
+      trajectoryMetadata: {
+        role: "generate",
+        sitePath,
+        method,
+        context: opts.context,
+        discoveryPath: discoveryPath(sitePath),
+        ...opts.trajectoryMetadata,
+      },
+    });
+  } finally {
+    await removeAgentWorkspace(agentWorkspace);
+  }
 
   try {
     const tools = extractAndValidateProposedTools(await readFile(saveTo, "utf8"), discovery);

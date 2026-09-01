@@ -139,7 +139,7 @@ async function runPlainRepair(opts: RepairOptions): Promise<void> {
   }
 
   const mcpConfigPath = await writeChromeDevtoolsMcpConfig(sitePath);
-  const repairTrajectory = createTrajectoryPath("repair");
+  const repairTrajectory = createTrajectoryPath("repair", undefined, sitePath);
   const workspace = await createRepairWorkspace(sitePath);
   const prompt = repairPrompt(evaluation, evaluationPath, sitePath, failedTasks);
 

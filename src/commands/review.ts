@@ -69,6 +69,10 @@ function parsePort(value: string | undefined): number {
   return port;
 }
 
+function nextPort(port: number): number {
+  return port === 65_535 ? 1 : port + 1;
+}
+
 function selectedIds(requestBody: { ids?: unknown }): string[] {
   const selected = Array.isArray(requestBody.ids)
     ? requestBody.ids
@@ -119,7 +123,7 @@ export async function runReviewPrompt(
       }
     } catch { /* stale or incomplete approval is never reused */ }
   }
-  const port = parsePort(requestedPort);
+  let port = parsePort(requestedPort);
   const app = express();
   app.use(express.urlencoded({ extended: false, limit: "64kb" }));
 
@@ -238,6 +242,7 @@ export async function runReviewPrompt(
           ...patchMetadata,
           patchStatus: "approved",
         });
+        console.log(`[review] approval confirmed: ${input.tools.length} tool(s), ${input.tasks.length} task(s), ${patchMetadata.changedFiles.length} source file(s)`);
         const decisionPath = await createTrajectoryArtifact(
           "review-decision",
           {
@@ -268,8 +273,9 @@ export async function runReviewPrompt(
         )}</code>.</p><p>You can close this window.</p></body></html>`);
         finish({ approved: true, tools: input.tools.map((tool) => tool.name), approvedTools: input.tools, tasks: input.tasks, approvalPath, decisionPath, sourceDiff });
       } catch (error) {
+        console.error(`[review] approval failed: ${error instanceof Error ? error.message : String(error)}`);
         response
-          .status(500)
+          .status(400)
           .type("text")
           .send(error instanceof Error ? error.message : String(error));
       }
@@ -305,10 +311,12 @@ export async function runReviewPrompt(
             ...trajectoryMetadata,
           }
         );
+        console.log("[review] draft rejected; no source changes were approved");
         response.type("html").send(`<!doctype html><html lang="en"><body>
 <h1>Draft rejected</h1><p>No approval manifest was changed.</p></body></html>`);
         finish({ approved: false, tools: [], approvedTools: [], tasks: [], approvalPath, decisionPath, sourceDiff: { status: "rejected", timestamp: new Date().toISOString() } });
       } catch (error) {
+        console.error(`[review] rejection failed: ${error instanceof Error ? error.message : String(error)}`);
         response
           .status(500)
           .type("text")
@@ -316,13 +324,23 @@ export async function runReviewPrompt(
       }
     });
 
-    const listener = app.listen(port, "127.0.0.1", () => {
-      server = listener;
-      console.log(`[review] approval UI: http://127.0.0.1:${port}`);
-      console.log(`[review] approved manifest will be saved to ${approvalPath}`);
-      console.log("[review] approve or reject the draft in the browser");
-    });
-    listener.once("error", reject);
+    const startServer = (candidate: number): void => {
+      const listener = app.listen(candidate, "127.0.0.1", () => {
+        server = listener;
+        port = candidate;
+        console.log(`[review] approval UI: http://127.0.0.1:${port}`);
+        console.log(`[review] approved manifest will be saved to ${approvalPath}`);
+        console.log("[review] waiting for human review: approve or reject the draft in the browser");
+      });
+      listener.once("error", (error: NodeJS.ErrnoException) => {
+        if (error.code === "EADDRINUSE") {
+          listener.close(() => startServer(nextPort(candidate)));
+          return;
+        }
+        reject(error);
+      });
+    };
+    startServer(port);
   });
 
   return decision;

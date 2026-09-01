@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { access, appendFile, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { access, mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { packageRoot } from "./paths.js";
 
@@ -19,8 +19,13 @@ export interface TrajectoryMetadata {
   [key: string]: unknown;
 }
 
-const trajectoryDirectory = path.join(packageRoot(), "trajectories");
-const trajectoryIndex = path.join(trajectoryDirectory, "README.md");
+const legacyTrajectoryDirectory = path.join(packageRoot(), "trajectories");
+
+function trajectoryDirectory(sitePath?: string): string {
+  return sitePath
+    ? path.join(path.resolve(sitePath), ".webmcpify", "trajectories")
+    : legacyTrajectoryDirectory;
+}
 
 function safeSegment(value: string): string {
   return (
@@ -41,62 +46,10 @@ function metadataPath(rawPath: string): string {
     : `${rawPath}.meta.json`;
 }
 
-function relativeTrajectoryPath(filePath: string): string {
-  return path.relative(trajectoryDirectory, filePath).split(path.sep).join("/");
-}
-
-function tableValue(value: unknown): string {
-  return String(value ?? "—")
-    .replaceAll("|", "\\|")
-    .replace(/\r?\n/g, " ");
-}
-
-async function ensureIndex(): Promise<void> {
-  await mkdir(trajectoryDirectory, { recursive: true });
-  try {
-    await access(trajectoryIndex);
-  } catch {
-    await writeFile(
-      trajectoryIndex,
-      `# WebMCPify trajectories
-
-Each run keeps the provider's raw output in a JSON file and stores the run
-instructions, target, permissions, timing, status, and related artifacts in the
-matching \`.meta.json\` file. Structured evaluation, review, and Temporal
-checkpoint artifacts are indexed here as well.
-
-| Recorded | Role | Status | Provider | Task | Raw/artifact | Metadata |
-| --- | --- | --- | --- | --- | --- | --- |
-`,
-      "utf8"
-    );
-  }
-}
-
-async function appendIndexEntry(
-  rawPath: string,
-  metadataFilePath: string,
-  metadata: TrajectoryMetadata
-): Promise<void> {
-  await ensureIndex();
-  const recordedAt = metadata.finishedAt ?? metadata.startedAt;
-  const rawName = relativeTrajectoryPath(rawPath);
-  const metadataName = relativeTrajectoryPath(metadataFilePath);
-  await appendFile(
-    trajectoryIndex,
-    `| ${tableValue(recordedAt)} | ${tableValue(metadata.role)} | ${tableValue(
-      metadata.status
-    )} | ${tableValue(metadata.provider)} | ${tableValue(
-      metadata.task
-    )} | [${tableValue(rawName)}](./${rawName}) | [metadata](./${metadataName}) |\n`,
-    "utf8"
-  );
-}
-
-export function createTrajectoryPath(role: string, label?: string): string {
+export function createTrajectoryPath(role: string, label?: string, sitePath?: string): string {
   const suffix = label ? `-${safeSegment(label)}` : "";
   return path.join(
-    trajectoryDirectory,
+    trajectoryDirectory(sitePath),
     `${safeSegment(role)}-${timestamp()}-${randomUUID().slice(0, 8)}${suffix}.json`
   );
 }
@@ -113,14 +66,13 @@ export async function recordTrajectoryMetadata(
       {
         version: 1,
         ...metadata,
-        trajectory: relativeTrajectoryPath(rawPath),
+        trajectory: path.basename(rawPath),
       },
       null,
       2
     ) + "\n",
     "utf8"
   );
-  await appendIndexEntry(rawPath, metadataFilePath, metadata);
   return metadataFilePath;
 }
 
@@ -141,7 +93,7 @@ export async function createTrajectoryArtifact(
     Partial<Pick<TrajectoryMetadata, "status">>,
   label?: string
 ): Promise<string> {
-  const rawPath = createTrajectoryPath(role, label);
+  const rawPath = createTrajectoryPath(role, label, typeof metadata.sitePath === "string" ? metadata.sitePath : undefined);
   await writeTrajectoryArtifact(rawPath, value, {
     ...metadata,
     role,
@@ -154,9 +106,10 @@ export async function latestTrajectoryPath(
   role: string,
   sitePath?: string
 ): Promise<string | undefined> {
-  await mkdir(trajectoryDirectory, { recursive: true });
+  const directory = trajectoryDirectory(sitePath);
+  await mkdir(directory, { recursive: true });
   const prefix = `${safeSegment(role)}-`;
-  const entries = await readdir(trajectoryDirectory, { withFileTypes: true });
+  const entries = await readdir(directory, { withFileTypes: true });
   const dynamic = entries
     .filter(
       (entry) =>
@@ -170,10 +123,10 @@ export async function latestTrajectoryPath(
 
   if (dynamic.length > 0) {
     const candidates = dynamic.reverse();
-    if (!sitePath) return path.join(trajectoryDirectory, candidates[0]);
+    if (!sitePath) return path.join(directory, candidates[0]);
     const target = path.resolve(sitePath);
     for (const candidate of candidates) {
-      const candidatePath = path.join(trajectoryDirectory, candidate);
+      const candidatePath = path.join(directory, candidate);
       try {
         const metadata = JSON.parse(await readFile(metadataPath(candidatePath), "utf8")) as Record<string, unknown>;
         const recordedSite = metadata.sitePath ?? metadata.cwd ?? metadata.targetProject;
@@ -185,7 +138,7 @@ export async function latestTrajectoryPath(
     return undefined;
   }
 
-  const legacy = path.join(trajectoryDirectory, `${safeSegment(role)}.json`);
+  const legacy = path.join(directory, `${safeSegment(role)}.json`);
   try {
     await access(legacy);
     if (!sitePath) return legacy;
@@ -200,5 +153,5 @@ export async function latestTrajectoryPath(
 }
 
 export function trajectoryDirectoryPath(): string {
-  return trajectoryDirectory;
+  return legacyTrajectoryDirectory;
 }

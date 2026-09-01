@@ -11,6 +11,7 @@ import {
   createTrajectoryArtifact,
   createTrajectoryPath,
 } from "../lib/trajectories.js";
+import { createAgentWorkspace, removeAgentWorkspace } from "../lib/agent-workspace.js";
 
 const TEST_EVALUATION_VERSION = 1;
 
@@ -57,7 +58,7 @@ export async function runTest(opts: TestOptions): Promise<StoredTestEvaluation> 
   const tasks = await loadApprovedTasks(sitePath);
   const runId = randomUUID();
   const taskSetId = taskFingerprint(tasks);
-  const trajectory = createTrajectoryPath("test", "all-tasks");
+  const trajectory = createTrajectoryPath("test", "all-tasks", sitePath);
   const approvalPath = path.join(
     sitePath,
     ".webmcpify",
@@ -95,23 +96,28 @@ pass from assumptions or from merely inspecting source code.`;
 
   console.log(`[test] running isolated ${provider} browser audit against ${opts.url}...`);
 
-  await runAgent({
-    provider,
-    prompt,
-    cwd: sitePath,
-    allowedTools: "mcp__chrome-devtools__*",
-    mcpConfig,
-    saveTo: trajectory,
-    trajectoryMetadata: {
-      role: "test",
-      runId,
-      sitePath,
-      url: opts.url,
-      approvalPath,
-      isolation: "mcp-only; no source access",
-      taskSetId,
-    },
-  });
+  const agentWorkspace = await createAgentWorkspace(sitePath);
+  try {
+    await runAgent({
+      provider,
+      prompt,
+      cwd: agentWorkspace,
+      allowedTools: "mcp__chrome-devtools__*",
+      mcpConfig,
+      saveTo: trajectory,
+      trajectoryMetadata: {
+        role: "test",
+        runId,
+        sitePath,
+        url: opts.url,
+        approvalPath,
+        isolation: "mcp-only; disposable workspace; no source access",
+        taskSetId,
+      },
+    });
+  } finally {
+    await removeAgentWorkspace(agentWorkspace);
+  }
 
   console.log("[test] agent session complete; running independent evaluator...");
   const scores = await scoreTasks(opts.url, tasks);

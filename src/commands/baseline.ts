@@ -14,6 +14,7 @@ import {
   createTrajectoryPath,
 } from "../lib/trajectories.js";
 import { writeChromeDevtoolsMcpConfig } from "../lib/mcp-config.js";
+import { createAgentWorkspace, removeAgentWorkspace } from "../lib/agent-workspace.js";
 
 export const AUDIT_PROMPT = `
 ${DISCOVERY_GUIDANCE}
@@ -47,7 +48,7 @@ export async function runBaseline(opts: {
   const tasks = await loadApprovedTasks(sitePath);
   const runId = randomUUID();
   const taskSetId = taskFingerprint(tasks);
-  const trajectoryPath = createTrajectoryPath("baseline");
+  const trajectoryPath = createTrajectoryPath("baseline", undefined, sitePath);
   const mcpConfigPath = path.join(sitePath, ".mcp.json");
   const baselineMcpConfig = opts.readOnly ? await writeChromeDevtoolsMcpConfig(sitePath) : mcpConfigPath;
   const taskContext = `Use these reviewed project tasks as the fixed evaluation
@@ -61,23 +62,28 @@ ${JSON.stringify(tasks, null, 2)}`;
 
   console.log(`[baseline] running one-shot ${opts.readOnly ? "read-only " : ""}baseline ${provider} session...`);
 
-  await runAgent({
-    provider,
-    prompt: opts.readOnly ? baselinePrompt : `${AUDIT_PROMPT}\n\n${taskContext}`,
-    cwd: sitePath,
-    allowedTools: opts.readOnly ? "Read,mcp__chrome-devtools__*" : "Read,Edit,Bash,mcp__chrome-devtools__*",
-    mcpConfig: existsSync(baselineMcpConfig) ? baselineMcpConfig : undefined,
-    saveTo: trajectoryPath,
-    trajectoryMetadata: {
-      role: "baseline",
-      runId,
-      sitePath,
-      url: opts.url,
-      tasksPath: path.join(sitePath, "tasks.json"),
-      taskCount: tasks.length,
-      taskSetId,
-    },
-  });
+  const agentWorkspace = await createAgentWorkspace(sitePath);
+  try {
+    await runAgent({
+      provider,
+      prompt: baselinePrompt,
+      cwd: agentWorkspace,
+      allowedTools: "Read,mcp__chrome-devtools__*",
+      mcpConfig: existsSync(baselineMcpConfig) ? baselineMcpConfig : undefined,
+      saveTo: trajectoryPath,
+      trajectoryMetadata: {
+        role: "baseline",
+        runId,
+        sitePath,
+        url: opts.url,
+        tasksPath: path.join(sitePath, "tasks.json"),
+        taskCount: tasks.length,
+        taskSetId,
+      },
+    });
+  } finally {
+    await removeAgentWorkspace(agentWorkspace);
+  }
 
   console.log(`[baseline] session complete, saved to ${trajectoryPath}`);
   console.log("[baseline] running independent eval check against live site...");
