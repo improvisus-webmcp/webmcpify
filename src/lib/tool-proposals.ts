@@ -121,6 +121,10 @@ function validateSupport(tool: ProposedTool, discovery: DiscoveryResult): void {
   if (knownSourceFiles.length === 0) throw new Error(`Tool "${tool.name}" references no source file present in discovery.`);
   if (tool.placement.strategy === "declarative" && !knownFiles.has(tool.placement.file)) throw new Error(`Declarative tool "${tool.name}" must be placed in an existing discovered source file.`);
   if (!tool.sourceFiles.includes(tool.placement.file)) throw new Error(`Tool "${tool.name}" placement.file must be listed in sourceFiles.`);
+  if (tool.placement.strategy === "imperative" && discovery.existingWebMCP.length > 0) {
+    const integrationFiles = new Set(discovery.existingWebMCP.map((signal) => signal.file));
+    if (!integrationFiles.has(tool.placement.file)) throw new Error(`Imperative tool "${tool.name}" should use an existing discovered WebMCP integration file: ${[...integrationFiles].join(", ")}.`);
+  }
   const kinds = new Set(relatedSignals(tool, discovery));
   if (kinds.size === 0) throw new Error(`Tool "${tool.name}" has no matching discovered UI action, API, state, auth, or WebMCP signal.`);
   const text = `${tool.name} ${tool.description} ${tool.implementation.action} ${tool.implementation.handler}`.toLowerCase();
@@ -133,8 +137,11 @@ export function validateProposedTools(value: unknown, discovery: DiscoveryResult
   const rawTools = Array.isArray(value) ? value : typeof value === "object" && value !== null ? (value as Record<string, unknown>).tools : undefined;
   if (!Array.isArray(rawTools) || rawTools.length === 0) throw new Error("The provider output must contain a non-empty tools array.");
   const tools = rawTools.map(normalizeTool);
+  const ids = new Set<string>();
   const names = new Set<string>();
   for (const tool of tools) {
+    if (ids.has(tool.id.toLowerCase())) throw new Error(`Duplicate tool id: ${tool.id}`);
+    ids.add(tool.id.toLowerCase());
     const normalizedName = tool.name.toLowerCase();
     if (names.has(normalizedName)) throw new Error(`Duplicate tool name: ${tool.name}`);
     names.add(normalizedName);

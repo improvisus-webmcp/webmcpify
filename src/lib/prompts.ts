@@ -30,7 +30,13 @@ these should drive conditional or dynamic registration rather than a static
 tool.
 
 5. Only after this discovery, choose declarative versus imperative per action
-and start drafting.
+   and start drafting.
+
+If discovery reports existing WebMCP registrations, classify each candidate as
+already satisfied, needing modification, or genuinely new. Do not duplicate an
+existing tool. Prefer the discovered WebMCP integration files for imperative
+changes; use the actual component containing a form for declarative changes.
+Record this reasoning in the generation output.
 
 Report the discovery findings before the diff: the detected stack, routes or
 pages, candidate actions, the real handler and state location for each, and

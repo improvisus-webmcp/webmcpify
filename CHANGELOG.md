@@ -4,6 +4,20 @@ All notable changes to WebMCPify are documented here.
 
 ## [Unreleased]
 
+### Hardened: review, approval, and final-evaluation lifecycle
+
+The review boundary now requires a two-step confirmation and persists the
+complete approved tool/task state with a shared approval ID and task
+fingerprint. Reopening an already-approved draft shows a locked state, while
+stale approvals are invalidated when a new generation starts. Task selection
+is taken only from the generated draft, fixing the failure mode where a
+review could leave `tasks.json` empty.
+
+Focused review, patch, evaluation, repair, and final-eval fixtures passed,
+including approval gating, atomic persistence verification, repeated-form
+selection, and failed-build rollback. The available local Coffee Store
+directory was empty, so no new live discovery or browser result is claimed.
+
 ### Added: end-to-end final evaluation orchestration
 
 Added `pnpm webmcpify final-eval --path <project>` to connect the existing

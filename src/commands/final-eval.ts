@@ -8,7 +8,7 @@ import { runGenerate } from "./generate.js";
 import { runRepair } from "./repair.js";
 import { runReviewPrompt } from "./review.js";
 import { runTest, type StoredTestEvaluation } from "./test.js";
-import { loadTasks, taskFingerprint, type Task } from "../lib/tasks.js";
+import { loadApprovedTasks, taskFingerprint, type Task } from "../lib/tasks.js";
 import { gitSourceSnapshot } from "../lib/patches.js";
 import { createTrajectoryArtifact, latestTrajectoryPath } from "../lib/trajectories.js";
 import type { TaskScoreSummary, TaskResult } from "../lib/scoring.js";
@@ -99,7 +99,7 @@ export async function runFinalEval(opts: FinalEvalOptions): Promise<FinalEvalRes
   const review = await runReviewPrompt(sitePath, opts.reviewPort ?? "4173", { finalEvalRunId: runId, level: "preparation" });
   if (!review.approved) throw new Error("Final evaluation stopped because the WebMCP proposal was rejected.");
 
-  const tasks = await loadTasks(sitePath);
+  const tasks = await loadApprovedTasks(sitePath);
   const taskSetId = taskFingerprint(tasks);
   console.log(`[final-eval] fixed approved task set: ${taskSetId} (${tasks.length} tasks)`);
 

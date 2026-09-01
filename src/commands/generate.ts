@@ -1,5 +1,6 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
+import { mkdir, rename } from "node:fs/promises";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import {
@@ -72,6 +73,17 @@ export interface GenerateOptions {
   method?: string;
   context?: string;
   trajectoryMetadata?: Record<string, unknown>;
+  preserveApprovalState?: boolean;
+}
+
+async function invalidateApprovalState(sitePath: string): Promise<void> {
+  const stateDirectory = path.join(sitePath, ".webmcpify");
+  const staleDirectory = path.join(stateDirectory, "stale");
+  await mkdir(staleDirectory, { recursive: true });
+  for (const file of [path.join(stateDirectory, "approved-tools.json"), path.join(sitePath, "tasks.json")]) {
+    if (!existsSync(file)) continue;
+    await rename(file, path.join(staleDirectory, `${Date.now()}-${path.basename(file)}`));
+  }
 }
 
 export async function runGenerate(opts: GenerateOptions) {
@@ -82,6 +94,8 @@ export async function runGenerate(opts: GenerateOptions) {
   if (!existsSync(sitePath)) {
     throw new Error(`Site path does not exist: ${sitePath}`);
   }
+
+  if (!opts.preserveApprovalState) await invalidateApprovalState(sitePath);
 
   const discovery = await runDiscovery(sitePath);
 

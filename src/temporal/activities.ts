@@ -25,6 +25,7 @@ export async function generateActivity(
     path,
     context: failureDetail,
     provider,
+    preserveApprovalState: true,
     trajectoryMetadata: {
       durable: true,
       attempt,

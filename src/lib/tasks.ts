@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { createHash } from "node:crypto";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { validateVerifyExpression, verificationErrors, type VerificationContext, type VerificationIssue } from "./task-verification.js";
 
@@ -14,6 +14,10 @@ export function taskFingerprint(tasks: Task[]): string {
   return createHash("sha256").update(JSON.stringify(tasks)).digest("hex").slice(0, 16);
 }
 
+export function approvedManifestPath(sitePath: string): string {
+  return path.join(sitePath, ".webmcpify", "approved-tools.json");
+}
+
 export interface ApprovedTaskManifest {
   version: 1;
   approved: true;
@@ -21,10 +25,7 @@ export interface ApprovedTaskManifest {
   draftPath: string;
   taskSetId: string;
   tasks: Task[];
-}
-
-export function approvedManifestPath(sitePath: string): string {
-  return path.join(sitePath, ".webmcpify", "approved-tools.json");
+  tools?: unknown[];
 }
 
 export async function loadApprovedTasks(sitePath: string): Promise<Task[]> {
@@ -46,6 +47,28 @@ export async function loadApprovedTasks(sitePath: string): Promise<Task[]> {
     throw new Error("tasks.json does not match the approved task set; refusing evaluation.");
   }
   return tasks;
+}
+
+export async function writeApprovedTasksAtomically(sitePath: string, manifest: ApprovedTaskManifest): Promise<void> {
+  const validated = validateTasks(manifest.tasks);
+  if (taskFingerprint(validated) !== manifest.taskSetId) throw new Error("Approved task manifest fingerprint does not match its tasks.");
+  const destination = approvedManifestPath(sitePath);
+  const taskDestination = tasksPath(sitePath);
+  const suffix = `.${process.pid}.${Date.now()}.tmp`;
+  const manifestTemp = `${destination}${suffix}`;
+  const tasksTemp = `${taskDestination}${suffix}`;
+  try {
+    await writeFile(tasksTemp, `${JSON.stringify(validated, null, 2)}\n`, "utf8");
+    await writeFile(manifestTemp, `${JSON.stringify({ ...manifest, tasks: validated }, null, 2)}\n`, "utf8");
+    const writtenTasks = validateTasks(JSON.parse(await readFile(tasksTemp, "utf8")));
+    const writtenManifest = JSON.parse(await readFile(manifestTemp, "utf8")) as ApprovedTaskManifest;
+    if (taskFingerprint(writtenTasks) !== manifest.taskSetId || writtenManifest.approvalId !== manifest.approvalId) throw new Error("Atomic approval verification failed before commit.");
+    await rename(tasksTemp, taskDestination);
+    await rename(manifestTemp, destination);
+    await loadApprovedTasks(sitePath);
+  } finally {
+    await Promise.all([rm(tasksTemp, { force: true }), rm(manifestTemp, { force: true })]);
+  }
 }
 
 export function taskVerificationIssues(task: Task, context: VerificationContext = {}): VerificationIssue[] {

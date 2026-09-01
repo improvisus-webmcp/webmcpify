@@ -1547,3 +1547,63 @@ The important properties are:
 10. **Make repairs repeatable and auditable.**
 
 That separation is what allows WebMCPify to evaluate whether WebMCP integration actually works instead of merely evaluating whether an AI agent produced plausible code.
+
+---
+
+# 34. Hardened approval and final-evaluation lifecycle
+
+The review page is an approval boundary, not a form that writes arbitrary
+agent output. The first approval click validates the edited tools and tasks
+and shows a confirmation summary. The second click persists the complete
+manifest and task file, verifies their shared task fingerprint, and only then
+marks the draft approved. Refreshing `/approve` for the same patch displays a
+locked state. A new generation run moves the previous approval and task file
+to `.webmcpify/stale/`, so artifacts from different runs cannot be reused.
+
+The authoritative approved task set is the `tasks` array in
+`.webmcpify/approved-tools.json`, cross-checked against `tasks.json` and its
+`taskSetId`. Baseline, WebMCP test, repair retest, and Temporal evaluation all
+load it through the same validation function. Generated tasks are never
+invented from an old `tasks.json` during review.
+
+The focused verification commands are:
+
+```bash
+pnpm tsc --noEmit
+pnpm build
+pnpm run verify:review
+pnpm run verify:patch
+pnpm run verify:evaluation
+pnpm run verify:repair
+pnpm run verify:final-eval
+git diff --check
+```
+
+These fixtures cover malformed and duplicate proposals, the two-step approval
+flow, task/tool persistence, missing approval, invalid patches, build failure
+rollback, project-scoped evaluation selection, repair retesting, and final
+evaluation task-set identity. Live provider/browser output is reported only
+when a real target checkout and browser session are available.
+
+# 35. End-to-End Testing
+
+For a real run, prepare a non-empty target checkout and start its application
+first. Then use the single orchestration command:
+
+```bash
+pnpm build
+pnpm webmcpify final-eval --path ~/Desktop/webmcp-coffee-store
+```
+
+The command runs the plain baseline, waits for human review of discovery,
+structured tools, tasks, and the exact source patch, applies only an approved
+patch, runs the WebMCP test, performs an approved repair/retest when failures
+require it, and runs the same approved task set through the durable Temporal
+workflow. It prints Level 1, Level 2, and Level 3 task scores and writes a
+project-scoped `final-eval-*` trajectory.
+
+Before the command, verify Chrome DevTools MCP and the target browser are
+available to Antigravity. The browser-agent path must remain source-blind;
+the independent evaluator performs the actual verification. If the target,
+provider, MCP server, Temporal service, or approval is unavailable, the run
+must be reported as failed or incomplete; do not add placeholder scores.
