@@ -1,4 +1,4 @@
-export const AI_PROVIDERS = ["gemini", "antigravity", "claude", "codex"] as const;
+export const AI_PROVIDERS = ["gemini", "antigravity", "claude", "codex", "opencode"] as const;
 
 export type AIProvider = (typeof AI_PROVIDERS)[number];
 

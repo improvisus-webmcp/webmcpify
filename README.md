@@ -227,6 +227,7 @@ Supported coding-agent providers:
 * Claude Code
 * Codex
 * Antigravity (`agy`)
+* OpenCode (`opencode`)
 
 The primary end-to-end provider used for the reference evaluation was **Antigravity**.
 
@@ -1360,6 +1361,7 @@ gemini
 claude
 codex
 antigravity
+opencode
 ```
 
 but provider support and provider testing are separate claims.

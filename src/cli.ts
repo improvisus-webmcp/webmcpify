@@ -13,7 +13,7 @@ import { runDiscover } from "./commands/discover.js";
 import { runFinalEval } from "./commands/final-eval.js";
 
 const providerHelp =
-  "AI provider to use: gemini, antigravity, claude, or codex";
+  "AI provider to use: gemini, antigravity, claude, codex, or opencode";
 
 const program = new Command();
 

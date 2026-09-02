@@ -28,7 +28,7 @@ export interface AgentRunOptions {
 type ProviderInvocation = {
   command: string;
   args: string[];
-  jsonLines?: boolean;
+  output: "json" | "json-lines" | "text";
 };
 
 function getInvocation(opts: AgentRunOptions): ProviderInvocation {
@@ -37,6 +37,7 @@ function getInvocation(opts: AgentRunOptions): ProviderInvocation {
       return {
         command: resolveExecutable("gemini", "WEBMCPIFY_GEMINI_BIN"),
         args: ["-p", opts.prompt, "--output-format", "json", "--yolo"],
+        output: "json",
       };
     case "codex":
       return {
@@ -49,7 +50,7 @@ function getInvocation(opts: AgentRunOptions): ProviderInvocation {
           "--dangerously-bypass-approvals-and-sandbox",
           opts.prompt,
         ],
-        jsonLines: true,
+        output: "json-lines",
       };
     case "antigravity": {
       const command =
@@ -67,15 +68,23 @@ function getInvocation(opts: AgentRunOptions): ProviderInvocation {
           "--print-timeout",
           process.env.WEBMCPIFY_ANTIGRAVITY_TIMEOUT ?? "15m",
         ],
+        output: "json",
       };
     }
     case "claude":
       throw new Error("Claude is handled by runClaude().");
+    case "opencode":
+      return {
+        command: resolveExecutable("opencode", "WEBMCPIFY_OPENCODE_BIN"),
+        args: ["run", "--dangerously-skip-permissions", opts.prompt],
+        output: "text",
+      };
   }
 }
 
-function parseOutput(stdout: string, jsonLines = false): unknown {
-  if (!jsonLines) return JSON.parse(stdout);
+function parseOutput(stdout: string, output: ProviderInvocation["output"]): unknown {
+  if (output === "text") return stdout;
+  if (output === "json") return JSON.parse(stdout);
 
   return stdout
     .split("\n")
@@ -125,6 +134,42 @@ async function prepareAntigravityMcpConfig(opts: AgentRunOptions): Promise<void>
   const workspaceConfig = path.join(opts.cwd, ".agents", "mcp_config.json");
   await mkdir(path.dirname(workspaceConfig), { recursive: true });
   await writeFile(workspaceConfig, await readFile(opts.mcpConfig, "utf8"), "utf8");
+}
+
+async function prepareOpenCodeMcpConfig(opts: AgentRunOptions): Promise<void> {
+  if (!opts.mcpConfig || !existsSync(opts.mcpConfig)) return;
+
+  let config: {
+    mcpServers?: Record<string, {
+      command?: string;
+      args?: string[];
+      env?: Record<string, string>;
+    }>;
+  };
+  try {
+    config = JSON.parse(await readFile(opts.mcpConfig, "utf8")) as typeof config;
+  } catch (error) {
+    throw new Error(
+      `Could not read MCP config at ${opts.mcpConfig}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
+  }
+
+  const servers = Object.fromEntries(
+    Object.entries(config.mcpServers ?? {})
+      .filter(([, server]) => server.command)
+      .map(([name, server]) => [name, {
+        type: "local",
+        command: [server.command as string, ...(server.args ?? [])],
+        ...(server.env ? { environment: server.env } : {}),
+      }])
+  );
+  await writeFile(
+    path.join(opts.cwd, "opencode.json"),
+    `${JSON.stringify({ $schema: "https://opencode.ai/config.json", mcp: { servers } }, null, 2)}\n`,
+    "utf8"
+  );
 }
 
 function errorProperty(error: unknown, property: string): unknown {
@@ -238,6 +283,9 @@ export async function runAgent(opts: AgentRunOptions): Promise<unknown> {
     if (opts.provider === "antigravity") {
       await prepareAntigravityMcpConfig(opts);
     }
+    if (opts.provider === "opencode") {
+      await prepareOpenCodeMcpConfig(opts);
+    }
 
     const invocation = getInvocation(opts);
     if (opts.provider === "codex") {
@@ -272,7 +320,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<unknown> {
 
     let pendingJsonLine = "";
     subprocess.stdout?.on("data", (chunk: Buffer | string) => {
-      if (opts.provider !== "codex") return;
+      if (invocation.output !== "json-lines") return;
 
       pendingJsonLine += chunk.toString();
       const lines = pendingJsonLine.split(/\r?\n/);
@@ -302,7 +350,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<unknown> {
     await mkdir(path.dirname(opts.saveTo), { recursive: true });
     await writeFile(opts.saveTo, stdout, "utf8");
 
-    const result = parseOutput(stdout, invocation.jsonLines);
+    const result = parseOutput(stdout, invocation.output);
     await recordAgentMetadata(opts, "completed", startedAt, startedMs);
     return result;
   } catch (error) {

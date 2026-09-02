@@ -96,7 +96,7 @@ The sidecar always includes `version: 1` and a repository-relative
 | `status` | `running`, `completed`, or `failed`; completed CLI runs normally record `completed`. |
 | `startedAt`, `finishedAt` | ISO timestamps for the provider session or checkpoint. |
 | `durationMs` | Elapsed agent-session time, when available. |
-| `provider` | `gemini`, `antigravity`, `claude`, or `codex`. |
+| `provider` | `gemini`, `antigravity`, `claude`, `codex`, or `opencode`. |
 | `cwd` / `sitePath` | Target project context. `cwd` is the provider working directory; stage metadata may also include `sitePath`. |
 | `url` | Live site URL used by browser-facing stages. |
 | `prompt` | Full instructions sent to the agent. |
