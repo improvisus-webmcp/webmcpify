@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { createTrajectoryArtifact } from "./trajectories.js";
 
 export interface DiscoverySignal {
   file: string;
@@ -189,16 +188,8 @@ export async function writeDiscovery(sitePath: string, discovery: DiscoveryResul
   return output;
 }
 
-export async function runDiscovery(sitePath: string): Promise<DiscoveryResult> {
-  const startedAt = new Date().toISOString();
+export async function runDiscovery(sitePath: string, persist = true): Promise<DiscoveryResult> {
   const discovery = await discoverProject(sitePath);
-  const output = await writeDiscovery(sitePath, discovery);
-  await createTrajectoryArtifact("discovery", discovery, {
-    sitePath,
-    discoveryPath: output,
-    filesScanned: discovery.filesScanned,
-    startedAt,
-    finishedAt: new Date().toISOString(),
-  });
+  if (persist) await writeDiscovery(sitePath, discovery);
   return discovery;
 }

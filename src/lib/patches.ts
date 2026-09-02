@@ -215,11 +215,12 @@ async function validateAgainstGit(sitePath: string, patch: string): Promise<void
 export async function gitSourceSnapshot(sitePath: string): Promise<{ sourceVersion?: string; workingTreeHash?: string }> {
   const sourceVersion = (await gitOutput(sitePath, ["rev-parse", "HEAD"]))?.trim();
   if (!sourceVersion) return {};
-  const diff = await gitOutput(sitePath, ["diff", "--binary", "HEAD"]) ?? "";
-  const status = (await gitOutput(sitePath, ["status", "--porcelain", "--untracked-files=all"]) ?? "")
-    .split("\n")
-    .filter((line) => !line.includes(".webmcpify/"))
-    .join("\n");
+  // These are WebMCPify-owned approval/runtime artifacts, not target source.
+  // Review writes tasks.json after generation, so including it here would make
+  // apply reject the exact approval transaction that it is meant to honor.
+  const sourcePathspec = [".", ":(exclude).webmcpify/**", ":(exclude)tasks.json"];
+  const diff = await gitOutput(sitePath, ["diff", "--binary", "HEAD", "--", ...sourcePathspec]) ?? "";
+  const status = await gitOutput(sitePath, ["status", "--porcelain", "--untracked-files=all", "--", ...sourcePathspec]) ?? "";
   return {
     sourceVersion,
     workingTreeHash: createHash("sha256").update(`${status}\0${diff}`).digest("hex"),

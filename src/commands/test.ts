@@ -32,6 +32,7 @@ export interface StoredTestEvaluation {
   recordedAt: string;
   tasks: Task[];
   scores: TaskScoreSummary;
+  agentError?: string;
 }
 
 async function readApprovalContext(sitePath: string): Promise<string> {
@@ -48,8 +49,9 @@ async function readApprovalContext(sitePath: string): Promise<string> {
   }
 
   const approved = await readFile(approvalPath, "utf8");
-  return `The human-approved tool manifest is at ${approvalPath}. Read it and
-use only the tools listed there. Its contents are:\n${approved}`;
+  const localApproved = approved.replaceAll(sitePath, ".");
+  return `The human-approved tool manifest is available as a local workspace
+artifact. Read it and use only the tools listed there. Its contents are:\n${localApproved}`;
 }
 
 export async function runTest(opts: TestOptions): Promise<StoredTestEvaluation> {
@@ -97,6 +99,7 @@ pass from assumptions or from merely inspecting source code.`;
   console.log(`[test] running isolated ${provider} browser audit against ${opts.url}...`);
 
   const agentWorkspace = await createAgentWorkspace(sitePath);
+  let agentError: string | undefined;
   try {
     await runAgent({
       provider,
@@ -115,6 +118,10 @@ pass from assumptions or from merely inspecting source code.`;
         taskSetId,
       },
     });
+  } catch (error) {
+    agentError = error instanceof Error ? error.message : String(error);
+    console.error(`[test] agent session failed: ${agentError}`);
+    console.error("[test] continuing with independent live-page scoring...");
   } finally {
     await removeAgentWorkspace(agentWorkspace);
   }
@@ -132,6 +139,7 @@ pass from assumptions or from merely inspecting source code.`;
     recordedAt: new Date().toISOString(),
     tasks,
     scores,
+    agentError,
   };
 
   const evaluationPath = await createTrajectoryArtifact(

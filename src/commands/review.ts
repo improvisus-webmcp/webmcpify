@@ -102,7 +102,12 @@ export async function runReviewPrompt(
   let proposedTools: ProposedTool[];
   try { proposedTools = validateProposedTools(JSON.parse(await readFile(proposalFile, "utf8")), discovery); }
   catch (error) { throw new Error(`Could not load structured tool proposals: ${error instanceof Error ? error.message : String(error)}`); }
-  const proposedTasks = extractTasksFromText(draft) ?? [];
+  // A repair patch changes source only; it must reuse the already-approved
+  // task definitions instead of asking the repair agent to redraft or alter
+  // the evaluation criteria.
+  const proposedTasks = patchMetadata.repair
+    ? await loadApprovedTasks(sitePath)
+    : extractTasksFromText(draft) ?? [];
   if (proposedTasks.length < 5 || proposedTasks.length > 6) throw new Error(`Generated draft must contain 5-6 valid tasks; received ${proposedTasks.length}. Fix the generation output before review.`);
   const projectTasksPath = tasksPath(sitePath);
   const approvalPath = path.join(

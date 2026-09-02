@@ -1,6 +1,6 @@
 import path from "node:path";
 import { existsSync } from "node:fs";
-import { mkdir, rename } from "node:fs/promises";
+import { mkdir, rename, writeFile } from "node:fs/promises";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import {
@@ -14,7 +14,12 @@ import { createPendingPatch } from "../lib/patches.js";
 import { readFile } from "node:fs/promises";
 import { discoveryPath, runDiscovery } from "../lib/discovery.js";
 import { extractAndValidateProposedTools, writeProposedTools } from "../lib/tool-proposals.js";
-import { createAgentWorkspace, removeAgentWorkspace } from "../lib/agent-workspace.js";
+import {
+  createAgentWorkspace,
+  initializeAgentWorkspace,
+  readAgentWorkspaceDiff,
+  removeAgentWorkspace,
+} from "../lib/agent-workspace.js";
 
 export const GENERATE_ONLY_PROMPT = `
 ${DISCOVERY_GUIDANCE}
@@ -25,6 +30,14 @@ declarative (HTML form attributes) for simple single-input actions, imperative
 discovery findings first, then output the proposed diff and a concise
 placement/wiring summary for each tool. Use explicit file paths in the diff.
 Do not deploy or verify — that happens in a separate step.
+
+You are working in a disposable workspace, not the target checkout. Make the
+proposed source edits in this workspace so WebMCPify can capture the exact
+working-tree diff. Never edit .webmcpify artifacts and never claim a diff for
+files you did not actually inspect.
+
+The current working directory is the only project you may access. Do not use
+absolute paths, inspect parent directories, or access any checkout outside it.
 
 ${TOOL_PLACEMENT_GUIDANCE}
 
@@ -81,7 +94,10 @@ async function invalidateApprovalState(sitePath: string): Promise<void> {
   const stateDirectory = path.join(sitePath, ".webmcpify");
   const staleDirectory = path.join(stateDirectory, "stale");
   await mkdir(staleDirectory, { recursive: true });
-  for (const file of [path.join(stateDirectory, "approved-tools.json"), path.join(sitePath, "tasks.json")]) {
+  // tasks.json belongs to the target project's approved evaluation state. Do
+  // not move or rewrite it during generation; a new task set replaces it only
+  // when the human approval transaction completes.
+  for (const file of [path.join(stateDirectory, "approved-tools.json")]) {
     if (!existsSync(file)) continue;
     await rename(file, path.join(staleDirectory, `${Date.now()}-${path.basename(file)}`));
   }
@@ -107,7 +123,10 @@ export async function runGenerate(opts: GenerateOptions) {
 drafted repair, but still inspect the code rather than assuming the diagnosis:
 ${opts.context}`
     : "";
-  const prompt = [GENERATE_ONLY_PROMPT, `The structured discovery has been completed and saved at ${discoveryPath(sitePath)}. Use this data as the source of truth and do not invent actions:\n${JSON.stringify(discovery, null, 2)}`, strategy, failureContext]
+  // Do not expose the real checkout path to an unrestricted provider process.
+  // The provider receives a local copy in its disposable workspace below.
+  const agentDiscovery = { ...discovery, targetProject: "." };
+  const prompt = [GENERATE_ONLY_PROMPT, `The structured discovery has been completed and is available at ./.webmcpify/discovery.json in the current workspace. Use this data as the source of truth and do not invent actions:\n${JSON.stringify(agentDiscovery, null, 2)}`, strategy, failureContext]
     .filter(Boolean)
     .join("\n\n");
 
@@ -116,6 +135,14 @@ ${opts.context}`
   );
 
   const agentWorkspace = await createAgentWorkspace(sitePath);
+  await initializeAgentWorkspace(agentWorkspace);
+  await mkdir(path.join(agentWorkspace, ".webmcpify"), { recursive: true });
+  await writeFile(
+    path.join(agentWorkspace, ".webmcpify", "discovery.json"),
+    `${JSON.stringify({ ...discovery, targetProject: "." }, null, 2)}\n`,
+    "utf8",
+  );
+  let workspaceDiff = "";
   try {
     await runAgent({
       provider,
@@ -123,7 +150,7 @@ ${opts.context}`
       cwd: agentWorkspace,
       // Providers may ignore permission hints. The disposable workspace is
       // the actual safety boundary keeping the target checkout untouched.
-      allowedTools: "Read",
+      allowedTools: "Read,Edit",
       saveTo,
       trajectoryMetadata: {
         role: "generate",
@@ -134,6 +161,7 @@ ${opts.context}`
         ...opts.trajectoryMetadata,
       },
     });
+    workspaceDiff = await readAgentWorkspaceDiff(agentWorkspace);
   } finally {
     await removeAgentWorkspace(agentWorkspace);
   }
@@ -143,7 +171,7 @@ ${opts.context}`
     const proposalFile = await writeProposedTools(sitePath, tools, discoveryPath(sitePath), saveTo);
     const patch = await createPendingPatch(
       sitePath,
-      await readFile(saveTo, "utf8"),
+      workspaceDiff || await readFile(saveTo, "utf8"),
       saveTo,
     );
     console.log(`[generate] draft saved to ${saveTo}`);

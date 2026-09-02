@@ -13,6 +13,7 @@ import {
   recordTrajectoryMetadata,
   type TrajectoryMetadata,
 } from "./trajectories.js";
+import { resolveRecordArtifacts } from "./config.js";
 
 export interface AgentRunOptions {
   provider: AIProvider;
@@ -166,6 +167,7 @@ async function recordAgentMetadata(
   startedMs: number,
   extra: Record<string, unknown> = {}
 ): Promise<void> {
+  if (!(await resolveRecordArtifacts())) return;
   try {
     await recordTrajectoryMetadata(
       opts.saveTo,
@@ -243,9 +245,30 @@ export async function runAgent(opts: AgentRunOptions): Promise<unknown> {
       invocation.args.splice(1, 0, ...mcpArgs);
     }
     let stdout: string;
+    // Keep the provider in its own process group. If the user interrupts the
+    // WebMCPify command, AGY (and any child shell it started) must stop before
+    // the parent exits; otherwise an old direct-target run can keep editing.
     const subprocess = execa(invocation.command, invocation.args, {
       cwd: opts.cwd,
+      detached: true,
     });
+    const terminateProvider = (signal: NodeJS.Signals): void => {
+      if (subprocess.pid) {
+        try {
+          process.kill(-subprocess.pid, signal);
+        } catch {
+          // The process may already have exited.
+        }
+      }
+      subprocess.kill(signal);
+    };
+    const onInterrupt = (): void => {
+      console.error(`[${opts.provider}] interrupted; terminating provider process...`);
+      terminateProvider("SIGTERM");
+    };
+    const onTerminate = (): void => terminateProvider("SIGTERM");
+    process.once("SIGINT", onInterrupt);
+    process.once("SIGTERM", onTerminate);
 
     let pendingJsonLine = "";
     subprocess.stdout?.on("data", (chunk: Buffer | string) => {
@@ -269,7 +292,12 @@ export async function runAgent(opts: AgentRunOptions): Promise<unknown> {
       if (message) console.error(`[${opts.provider}] ${message}`);
     });
 
-    ({ stdout } = await subprocess);
+    try {
+      ({ stdout } = await subprocess);
+    } finally {
+      process.removeListener("SIGINT", onInterrupt);
+      process.removeListener("SIGTERM", onTerminate);
+    }
 
     await mkdir(path.dirname(opts.saveTo), { recursive: true });
     await writeFile(opts.saveTo, stdout, "utf8");

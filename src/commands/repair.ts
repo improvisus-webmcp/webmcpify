@@ -25,18 +25,21 @@ export interface RepairOptions {
   path?: string;
   url?: string;
   task?: string;
+  evaluationPath?: string;
   durable?: boolean;
   maxRepairs?: number | string;
 }
 
-async function readLastEvaluation(sitePath: string): Promise<{
+async function readLastEvaluation(sitePath: string, explicitPath?: string): Promise<{
   evaluation: StoredTestEvaluation;
   path: string;
 }> {
-  const candidates = (await Promise.all([
-    latestTrajectoryPath("test-eval", sitePath),
-    latestTrajectoryPath("baseline-eval", sitePath),
-  ])).filter((candidate): candidate is string => Boolean(candidate));
+  const candidates = explicitPath
+    ? [explicitPath]
+    : (await Promise.all([
+        latestTrajectoryPath("test-eval", sitePath),
+        latestTrajectoryPath("baseline-eval", sitePath),
+      ])).filter((candidate): candidate is string => Boolean(candidate));
   const evaluationPath = candidates.sort().at(-1);
   if (!evaluationPath || !existsSync(evaluationPath)) {
     throw new Error(
@@ -78,13 +81,16 @@ export function repairPrompt(
     task: evaluation.tasks.find((candidate) => candidate.id === result.task),
     result,
   }));
-  return `Repair only the failed WebMCP behavior in the target project.
+  return `Repair only the failed WebMCP behavior in the current disposable
+workspace. The current working directory is the only project you may access.
+Do not use absolute paths, inspect parent directories, or access the original
+checkout. WebMCPify will capture the workspace diff and send it through human
+review before applying anything.
 
-Target project: ${sitePath}
 Evaluation mode: ${evaluation.mode ?? "unknown"}
 Evaluation run ID: ${evaluation.runId ?? "unknown"}
 Task set fingerprint: ${evaluation.taskSetId ?? "unknown"}
-Evaluation artifact: ${evaluationPath}
+Evaluation artifact name: ${path.basename(evaluationPath)}
 
 Failed task evidence (use the exact task definitions and observed details):
 ${JSON.stringify(taskEvidence, null, 2)}
@@ -120,7 +126,24 @@ async function createRepairWorkspace(sitePath: string): Promise<string> {
 }
 
 async function workspaceDiff(workspace: string): Promise<string> {
-  const result = await execa("git", ["diff", "--binary", "HEAD"], { cwd: workspace });
+  // Include newly-created source files in repair patches. Plain `git diff`
+  // omits untracked files, which can leave imports without their new module.
+  await execa("git", ["add", "-A"], { cwd: workspace });
+  const result = await execa(
+    "git",
+    [
+      "diff",
+      "--cached",
+      "--binary",
+      "HEAD",
+      "--",
+      ".",
+      ":(exclude).webmcpify/**",
+      ":(exclude).agents/**",
+      ":(exclude)tasks.json",
+    ],
+    { cwd: workspace },
+  );
   if (!result.stdout.trim()) throw new Error("Repair agent produced no source changes.");
   return result.stdout;
 }
@@ -131,7 +154,7 @@ async function runPlainRepair(opts: RepairOptions): Promise<void> {
   const {
     evaluation,
     path: evaluationPath,
-  } = await readLastEvaluation(sitePath);
+  } = await readLastEvaluation(sitePath, opts.evaluationPath);
   const failedTasks = selectFailedTasks(evaluation, opts.task);
 
   if (failedTasks.length === 0) {

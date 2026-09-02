@@ -63,6 +63,7 @@ ${JSON.stringify(tasks, null, 2)}`;
   console.log(`[baseline] running one-shot ${opts.readOnly ? "read-only " : ""}baseline ${provider} session...`);
 
   const agentWorkspace = await createAgentWorkspace(sitePath);
+  let agentError: string | undefined;
   try {
     await runAgent({
       provider,
@@ -81,17 +82,21 @@ ${JSON.stringify(tasks, null, 2)}`;
         taskSetId,
       },
     });
+  } catch (error) {
+    agentError = error instanceof Error ? error.message : String(error);
+    console.error(`[baseline] agent session failed: ${agentError}`);
+    console.error("[baseline] continuing with independent live-page scoring...");
   } finally {
     await removeAgentWorkspace(agentWorkspace);
   }
 
-  console.log(`[baseline] session complete, saved to ${trajectoryPath}`);
+  if (!agentError) console.log(`[baseline] session complete, saved to ${trajectoryPath}`);
   console.log("[baseline] running independent eval check against live site...");
 
   const scores = await scoreTasks(opts.url, tasks);
   const evaluationPath = await createTrajectoryArtifact(
     "baseline-eval",
-    { version: 1, mode: "baseline", runId, targetProject: sitePath, taskSetId, tasks, scores },
+    { version: 1, mode: "baseline", runId, targetProject: sitePath, taskSetId, tasks, scores, agentError },
     {
       provider,
       url: opts.url,
@@ -107,5 +112,5 @@ ${JSON.stringify(tasks, null, 2)}`;
   );
   console.log(`[baseline] result: ${scores.passed}/${scores.total} tasks passed`);
   console.log(`[baseline] independent evaluation saved to ${evaluationPath}`);
-  return { runId, evaluationPath, tasks, scores };
+  return { runId, evaluationPath, tasks, scores, agentError };
 }
