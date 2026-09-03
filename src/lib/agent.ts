@@ -45,9 +45,15 @@ function getInvocation(opts: AgentRunOptions): ProviderInvocation {
         args: [
           "exec",
           "--json",
+          "--color",
+          "never",
+          "--ephemeral",
+          // Baseline and browser-test workspaces are intentionally disposable
+          // copies without the target repository's .git directory.
+          "--skip-git-repo-check",
+          "--approve-for-me",
           "--cd",
           opts.cwd,
-          "--dangerously-bypass-approvals-and-sandbox",
           opts.prompt,
         ],
         output: "json-lines",
@@ -57,17 +63,33 @@ function getInvocation(opts: AgentRunOptions): ProviderInvocation {
         process.env.WEBMCPIFY_ANTIGRAVITY_BIN ??
         executableOnPath("agy") ??
         "agy";
+      const args = [
+        "-p",
+        opts.prompt,
+        "--output-format",
+        "json",
+        "--dangerously-skip-permissions",
+        // AGY can retain a project context independently of the process
+        // cwd. Force a fresh project rooted at the disposable workspace
+        // and enforce OS-level terminal containment so it cannot discover
+        // or edit the real target checkout.
+        "--new-project",
+        "--add-dir",
+        opts.cwd,
+        "--sandbox",
+      ];
+      // Effort is model-dependent in AGY. Do not force a value by default:
+      // some installed models reject --effort entirely. Users can opt in
+      // after checking their model supports it.
+      const effort = process.env.WEBMCPIFY_ANTIGRAVITY_EFFORT || undefined;
+      if (effort) args.push("--effort", effort);
+      args.push(
+        "--print-timeout",
+        antigravityPrintTimeout(opts),
+      );
       return {
         command,
-        args: [
-          "-p",
-          opts.prompt,
-          "--output-format",
-          "json",
-          "--dangerously-skip-permissions",
-          "--print-timeout",
-          process.env.WEBMCPIFY_ANTIGRAVITY_TIMEOUT ?? "15m",
-        ],
+        args,
         output: "json",
       };
     }
@@ -181,6 +203,61 @@ function inferredRole(saveTo: string): string {
   return path.basename(saveTo).split("-")[0]?.replace(/\.json$/, "") || "agent";
 }
 
+function antigravityPrintTimeout(opts: AgentRunOptions): string {
+  const role = typeof opts.trajectoryMetadata?.role === "string"
+    ? opts.trajectoryMetadata.role
+    : inferredRole(opts.saveTo);
+  // Browser-only levels have an independent evaluator fallback, so a stalled
+  // session must not hold the whole pipeline for the patch-generation limit.
+  const roleTimeout = role === "baseline"
+    ? process.env.WEBMCPIFY_ANTIGRAVITY_BASELINE_TIMEOUT
+    : role === "test"
+      ? process.env.WEBMCPIFY_ANTIGRAVITY_TEST_TIMEOUT
+      : undefined;
+  return roleTimeout
+    ?? process.env.WEBMCPIFY_ANTIGRAVITY_TIMEOUT
+    ?? ((role === "baseline" || role === "test") ? "5m" : "15m");
+}
+
+function parseTimeoutMs(value: string, fallbackMs: number): number {
+  const match = value.trim().match(/^(\d+(?:\.\d+)?)(ms|s|m|h)$/i);
+  if (!match) return fallbackMs;
+  const amount = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const multiplier = unit === "h" ? 3_600_000 : unit === "m" ? 60_000 : unit === "s" ? 1_000 : 1;
+  return Math.max(1_000, Math.round(amount * multiplier));
+}
+
+function codexTimeoutMs(opts: AgentRunOptions): number {
+  const role = typeof opts.trajectoryMetadata?.role === "string"
+    ? opts.trajectoryMetadata.role
+    : inferredRole(opts.saveTo);
+  const fallback = role === "baseline" || role === "test" ? 5 * 60_000 : 15 * 60_000;
+  return parseTimeoutMs(process.env.WEBMCPIFY_CODEX_TIMEOUT ?? "", fallback);
+}
+
+function startAgentProgress(opts: AgentRunOptions, startedMs: number): () => void {
+  const role = typeof opts.trajectoryMetadata?.role === "string"
+    ? opts.trajectoryMetadata.role
+    : inferredRole(opts.saveTo);
+  const elapsed = (): string => `${Math.round((Date.now() - startedMs) / 1000)}s`;
+  console.error(`[${opts.provider}] ${role} agent started...`);
+  const interactive = Boolean(process.stderr.isTTY);
+  const spinner = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
+  let frame = 0;
+  const render = (): void => {
+    if (!interactive) return;
+    process.stderr.write(`\r\x1b[2K[${opts.provider}] ${role} agent working ${elapsed()} ${spinner[frame++ % spinner.length]}`);
+  };
+  render();
+  const timer = setInterval(render, 250);
+  return () => {
+    clearInterval(timer);
+    if (interactive) process.stderr.write("\r\x1b[2K");
+    console.error(`[${opts.provider}] ${role} agent finished (${elapsed()} elapsed).`);
+  };
+}
+
 function trajectoryMetadata(
   opts: AgentRunOptions,
   status: TrajectoryMetadata["status"],
@@ -266,6 +343,7 @@ async function preserveFailedOutput(
 export async function runAgent(opts: AgentRunOptions): Promise<unknown> {
   const startedMs = Date.now();
   const startedAt = new Date(startedMs).toISOString();
+  const stopProgress = startAgentProgress(opts, startedMs);
 
   try {
     if (opts.provider === "claude") {
@@ -299,6 +377,11 @@ export async function runAgent(opts: AgentRunOptions): Promise<unknown> {
     const subprocess = execa(invocation.command, invocation.args, {
       cwd: opts.cwd,
       detached: true,
+      // Prompts are passed as command arguments. Leaving stdin open makes
+      // Codex assume that more prompt text is coming and wait indefinitely
+      // with "Reading additional input from stdin...".
+      stdin: "ignore",
+      timeout: opts.provider === "codex" ? codexTimeoutMs(opts) : undefined,
     });
     const terminateProvider = (signal: NodeJS.Signals): void => {
       if (subprocess.pid) {
@@ -327,8 +410,20 @@ export async function runAgent(opts: AgentRunOptions): Promise<unknown> {
       pendingJsonLine = lines.pop() ?? "";
       for (const line of lines) {
         try {
-          const event = JSON.parse(line) as { type?: string };
-          if (event.type) console.log(`[codex] ${event.type}`);
+          const event = JSON.parse(line) as {
+            type?: string;
+            item?: { type?: string };
+          };
+          // Codex emits one JSONL event for every internal item. Keep the
+          // trajectory complete, but show only lifecycle events in the CLI;
+          // the shared spinner already communicates that work is ongoing.
+          if (event.type === "turn.started") {
+            console.log("[codex] turn started");
+          } else if (event.type === "turn.completed") {
+            console.log("[codex] turn completed");
+          } else if (event.type === "error" || event.item?.type === "error") {
+            console.error("[codex] agent reported an error");
+          }
         } catch {
           // Keep the raw output for the trajectory; progress logging is best effort.
         }
@@ -337,7 +432,11 @@ export async function runAgent(opts: AgentRunOptions): Promise<unknown> {
 
     subprocess.stderr?.on("data", (chunk: Buffer | string) => {
       const message = chunk.toString().trim();
-      if (message) console.error(`[${opts.provider}] ${message}`);
+      // Codex prints this informational notice even when stdin is explicitly
+      // ignored. It is not an error and only makes the normal CLI look stuck.
+      if (message && message !== "Reading additional input from stdin...") {
+        console.error(`[${opts.provider}] ${message}`);
+      }
     });
 
     try {
@@ -376,5 +475,7 @@ export async function runAgent(opts: AgentRunOptions): Promise<unknown> {
       stderr: errorProperty(error, "stderr"),
     });
     throw error;
+  } finally {
+    stopProgress();
   }
 }

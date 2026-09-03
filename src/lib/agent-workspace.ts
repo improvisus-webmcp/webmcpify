@@ -32,7 +32,7 @@ export async function initializeAgentWorkspace(workspace: string): Promise<void>
   await mkdir(path.join(workspace, ".git", "info"), { recursive: true });
   await appendFile(
     path.join(workspace, ".git", "info", "exclude"),
-    ".webmcpify/\n.agents/\n",
+    ".webmcpify/\n.agents/\nnode_modules/\n",
     "utf8",
   );
   await execFileAsync("git", ["add", "-A"], { cwd: workspace });
@@ -55,6 +55,7 @@ export async function readAgentWorkspaceDiff(workspace: string): Promise<string>
       ".",
       ":(exclude).webmcpify/**",
       ":(exclude).agents/**",
+      ":(exclude)node_modules/**",
       ":(exclude)tasks.json",
     ],
     { cwd: workspace },

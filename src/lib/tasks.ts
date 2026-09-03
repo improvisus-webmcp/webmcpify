@@ -189,33 +189,57 @@ function taskArray(value: unknown): Task[] | undefined {
 /** Extract a 5-6 task proposal from an agent's draft without executing it. */
 export function extractTasksFromText(text: string): Task[] | undefined {
   const candidates: string[] = [];
-  for (const match of text.matchAll(/```(?:[^\n]*\n)?([\s\S]*?)```/gi)) {
-    if (match[1]) {
-      const trimmed = match[1].trim();
-      candidates.push(trimmed);
-      const arrStart = trimmed.indexOf("[");
-      const arrEnd = trimmed.lastIndexOf("]");
-      if (arrStart >= 0 && arrEnd > arrStart) {
-        candidates.push(trimmed.slice(arrStart, arrEnd + 1));
+  const sources = [text];
+  try {
+    JSON.parse(text);
+  } catch {
+    // Codex --json emits JSONL. Extract assistant message text from each
+    // event before looking for TASKS_JSON, just as tool proposal parsing does.
+    const messages: string[] = [];
+    const collect = (value: unknown, key?: string): void => {
+      if (typeof value === "string") {
+        if (!key || ["response", "result", "text", "output", "message", "content"].includes(key)) messages.push(value);
+      } else if (Array.isArray(value)) value.forEach((entry) => collect(entry));
+      else if (typeof value === "object" && value !== null) Object.entries(value).forEach(([childKey, childValue]) => collect(childValue, childKey));
+    };
+    for (const line of text.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean)) {
+      try {
+        collect(JSON.parse(line));
+      } catch {
+        // Keep scanning the remaining provider events.
       }
     }
+    if (messages.length) sources.unshift(messages.join("\n"));
   }
-  for (const match of text.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
-    if (match[1]) {
-      const trimmed = match[1].trim();
-      candidates.push(trimmed);
-      const arrStart = trimmed.indexOf("[");
-      const arrEnd = trimmed.lastIndexOf("]");
-      if (arrStart >= 0 && arrEnd > arrStart) {
-        candidates.push(trimmed.slice(arrStart, arrEnd + 1));
+  for (const source of sources) {
+    for (const match of source.matchAll(/```(?:[^\n]*\n)?([\s\S]*?)```/gi)) {
+      if (match[1]) {
+        const trimmed = match[1].trim();
+        candidates.push(trimmed);
+        const arrStart = trimmed.indexOf("[");
+        const arrEnd = trimmed.lastIndexOf("]");
+        if (arrStart >= 0 && arrEnd > arrStart) {
+          candidates.push(trimmed.slice(arrStart, arrEnd + 1));
+        }
       }
     }
-  }
-  candidates.push(text.trim());
-  const firstArray = text.indexOf("[");
-  const lastArray = text.lastIndexOf("]");
-  if (firstArray >= 0 && lastArray > firstArray) {
-    candidates.push(text.slice(firstArray, lastArray + 1));
+    for (const match of source.matchAll(/```(?:json)?\s*([\s\S]*?)```/gi)) {
+      if (match[1]) {
+        const trimmed = match[1].trim();
+        candidates.push(trimmed);
+        const arrStart = trimmed.indexOf("[");
+        const arrEnd = trimmed.lastIndexOf("]");
+        if (arrStart >= 0 && arrEnd > arrStart) {
+          candidates.push(trimmed.slice(arrStart, arrEnd + 1));
+        }
+      }
+    }
+    candidates.push(source.trim());
+    const firstArray = source.indexOf("[");
+    const lastArray = source.lastIndexOf("]");
+    if (firstArray >= 0 && lastArray > firstArray) {
+      candidates.push(source.slice(firstArray, lastArray + 1));
+    }
   }
 
   for (const candidate of [...new Set(candidates)]) {

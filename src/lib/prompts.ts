@@ -58,6 +58,17 @@ file organization and runtime conventions.
 - For every tool, state explicitly which existing file was edited or which
   new file was created, why that location fits, and where the tool is wired in
   or registered at runtime.
+- The WebMCP runtime object may be declared as \`unknown\` by a site's ambient
+  TypeScript or Cloudflare worker types. An \`in\` check alone does not narrow
+  that value. Use a local, explicit WebMCP context interface and assign a
+  narrowed immutable value before calling \`registerTool\` or
+  \`unregisterTool\`. If a nested subscriber or handler needs the context,
+  capture the narrowed value, not the optional value, for example:
+  \`const discoveredContext = (navigator as Navigator & { modelContext?: WebMCPContext }).modelContext; if (!discoveredContext) return; const modelContext: WebMCPContext = discoveredContext;\`.
+  Use \`modelContext\` inside every nested callback; never capture
+  \`discoveredContext\` after the guard.
+  Run the site's typecheck/build in the disposable workspace and fix all
+  compile errors before reporting the draft.
 `.trim();
 
 export const TASK_AUTHORING_PROMPT = `

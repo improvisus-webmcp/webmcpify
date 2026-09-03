@@ -33,7 +33,7 @@ export async function repairWorkflow(
   }
 
   for (let attempt = 0; attempt <= maxRepairs; attempt++) {
-    const result = await testActivity(opts.path, opts.url, opts.task, attempt, opts.runId, opts.taskSetId);
+    const result = await testActivity(opts.path, opts.url, opts.task, attempt, opts.runId, opts.taskSetId, opts.provider);
     if (result.passed) {
       return { passed: true, attempts: attempt, task: opts.task };
     }
@@ -47,7 +47,7 @@ export async function repairWorkflow(
       };
     }
 
-    await generateActivity(opts.path, result.detail, opts.provider, attempt);
+    await generateActivity(opts.path, result.detail, opts.provider, attempt, opts.url, opts.task);
     const review = await reviewActivity(opts.path, attempt);
     if (!review.approved) {
       return {

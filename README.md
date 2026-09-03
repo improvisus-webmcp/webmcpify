@@ -90,6 +90,28 @@ target-site/.webmcpify/trajectories/generate-*.json
 target-site/.webmcpify/trajectories/generate-*.meta.json
 ```
 
+### Git prerequisite for the full workflow
+
+The target application must be a Git repository with at least one commit for
+the complete WebMCPify workflow. WebMCPify uses Git to capture and validate
+generated patches, record the target source state, apply only an approved
+patch, detect changes made after review, and roll back a failed application.
+
+Discovery, baseline inspection, and browser checks can run without Git, but
+the patch-based `generate`, `review`, `apply`, repair, and `final-eval` flow
+cannot complete without it. The agent never edits the target repository
+directly: it works in a separate disposable workspace, and the target is
+modified only by the explicit approved `apply` stage.
+
+To prepare a non-Git target project:
+
+```bash
+cd /path/to/target-site
+git init
+git add -A
+git commit -m "Initial target snapshot"
+```
+
 ---
 
 ### Human Review
@@ -354,6 +376,19 @@ produce a candidate diff. The target project is modified exclusively by
 WebMCPify's explicit human-review and `apply` stages.
 
 Before running the browser-agent tests, Chrome DevTools MCP must be available to Antigravity.
+
+Browser-only baseline and test sessions use a 5-minute provider timeout by
+default because independent live-page scoring continues if the agent stalls.
+AGY reasoning effort is not forced because support depends on the selected
+model. Generation and repair retain the 15-minute timeout. Override these
+defaults when needed:
+
+```bash
+WEBMCPIFY_ANTIGRAVITY_BASELINE_TIMEOUT=10m \
+WEBMCPIFY_ANTIGRAVITY_TEST_TIMEOUT=10m \
+WEBMCPIFY_ANTIGRAVITY_EFFORT=medium \
+pnpm webmcpify final-eval --path ./target-site --url http://localhost:5173 --provider antigravity
+```
 
 ## 6.1 Install Chrome DevTools MCP
 

@@ -6,36 +6,11 @@ import { resolveProvider } from "../lib/ai-provider.js";
 import { scoreTasks } from "../lib/scoring.js";
 import { loadApprovedTasks, taskFingerprint } from "../lib/tasks.js";
 import {
-  DISCOVERY_GUIDANCE,
-  TOOL_PLACEMENT_GUIDANCE,
-} from "../lib/prompts.js";
-import {
   createTrajectoryArtifact,
   createTrajectoryPath,
 } from "../lib/trajectories.js";
 import { writeChromeDevtoolsMcpConfig } from "../lib/mcp-config.js";
 import { createAgentWorkspace, removeAgentWorkspace } from "../lib/agent-workspace.js";
-
-export const AUDIT_PROMPT = `
-${DISCOVERY_GUIDANCE}
-
-If WebMCP tools already exist in the codebase, verify each one by
-discovering it (list_webmcp_tools) and calling it through your available
-browser tools. Report tool discovery, each execution and its result, and
-any dynamic registration/unregistration behavior you observe (e.g. tools
-that appear or disappear based on app state).
-
-If no WebMCP tools exist yet, draft appropriate tool registrations for
-the site's key actions, choosing declarative (HTML form attributes) or
-imperative (navigator.modelContext) per action based on what fits best,
-then verify your own work the same way.
-
-${TOOL_PLACEMENT_GUIDANCE}
-
-Report the discovery findings before describing any changes: what actions you
-identified, what you found or built, and the verification result for each
-tool.
-`.trim();
 
 export async function runBaseline(opts: {
   path: string;
@@ -57,8 +32,11 @@ observed result for each:
 ${JSON.stringify(tasks, null, 2)}`;
 
   const baselinePrompt = opts.readOnly
-    ? `This is the plain baseline level. Do not edit source files, install dependencies, create WebMCP registrations, or call WebMCP tools. Inspect and exercise only the existing user-facing UI with Chrome DevTools MCP. Use the exact reviewed tasks below and report each observed outcome.\n\n${JSON.stringify(tasks, null, 2)}`
-    : `${AUDIT_PROMPT}\n\n${taskContext}`;
+    ? `This is the plain baseline level. Do not edit source files, install dependencies, create WebMCP registrations, or call WebMCP tools. Inspect and exercise only the existing user-facing UI with Chrome DevTools MCP. Use the exact reviewed tasks below and report each observed outcome. For speed, perform each task once in listed order, do not scan unrelated source or invent tools, do not wait for external conditions, and stop immediately after the final task.\n\n${taskContext}`
+    : `Audit the already-running site with Chrome DevTools MCP. Discover and
+verify existing WebMCP tools, then attempt each reviewed task once. Do not
+edit source files or invent tools. Report each observed result and any dynamic
+registration behavior.\n\n${taskContext}`;
 
   console.log(`[baseline] running one-shot ${opts.readOnly ? "read-only " : ""}baseline ${provider} session...`);
 

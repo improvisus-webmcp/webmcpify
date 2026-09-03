@@ -4,7 +4,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
-import { scoreTasks, type TaskScoreSummary } from "../lib/scoring.js";
+import { assertWebMcpRuntime, resetScoringState, scoreTask, type TaskScoreSummary } from "../lib/scoring.js";
 import { loadApprovedTasks, taskFingerprint, type Task } from "../lib/tasks.js";
 import { writeChromeDevtoolsMcpConfig } from "../lib/mcp-config.js";
 import {
@@ -35,6 +35,74 @@ export interface StoredTestEvaluation {
   agentError?: string;
 }
 
+export async function runApprovedTask(opts: {
+  path: string;
+  url: string;
+  provider?: string;
+  taskId: string;
+  runId?: string;
+  taskSetId?: string;
+}): Promise<Awaited<ReturnType<typeof scoreTask>>> {
+  const provider = resolveProvider(opts.provider);
+  const sitePath = path.resolve(opts.path);
+  const tasks = await loadApprovedTasks(sitePath);
+  const task = tasks.find((candidate) => candidate.id === opts.taskId);
+  if (!task) throw new Error(`Unknown approved task "${opts.taskId}".`);
+  if (opts.taskSetId && taskFingerprint(tasks) !== opts.taskSetId) {
+    throw new Error(`Approved task set changed during browser evaluation. Expected ${opts.taskSetId}, found ${taskFingerprint(tasks)}.`);
+  }
+
+  const approvalPath = path.join(sitePath, ".webmcpify", "approved-tools.json");
+  const approvalContext = await readApprovalContext(sitePath);
+  const mcpConfig = await writeChromeDevtoolsMcpConfig(sitePath);
+  const trajectory = createTrajectoryPath("test", task.id, sitePath);
+  const prompt = `Run exactly this approved WebMCP task against the already-running site at
+${opts.url}. Do not edit the site's files. Use only the live browser and approved
+WebMCP tools. Perform the task and leave its resulting state in the browser for
+independent verification.
+
+${approvalContext}
+
+Approved task:
+${JSON.stringify(task, null, 2)}
+
+Report the observed result, but do not claim success unless you executed it.`;
+
+  // If Chrome is already connected, reset its state between task attempts.
+  // If it is not connected yet, let Chrome DevTools MCP/autoConnect initialize
+  // it when the first agent session starts.
+  try {
+    await resetScoringState(opts.url);
+  } catch {
+    // The first MCP session may be responsible for starting Chrome.
+  }
+  const agentWorkspace = await createAgentWorkspace(sitePath);
+  try {
+    await runAgent({
+      provider,
+      prompt,
+      cwd: agentWorkspace,
+      allowedTools: "mcp__chrome-devtools__*",
+      mcpConfig,
+      saveTo: trajectory,
+      trajectoryMetadata: {
+        role: "test",
+        runId: opts.runId,
+        taskId: task.id,
+        sitePath,
+        url: opts.url,
+        approvalPath,
+        isolation: "mcp-only; disposable workspace; no source access",
+        taskSetId: opts.taskSetId,
+      },
+    });
+  } finally {
+    await removeAgentWorkspace(agentWorkspace);
+  }
+  await assertWebMcpRuntime(opts.url);
+  return scoreTask(opts.url, task, { resetStorage: false });
+}
+
 async function readApprovalContext(sitePath: string): Promise<string> {
   const approvalPath = path.join(
     sitePath,
@@ -48,10 +116,14 @@ async function readApprovalContext(sitePath: string): Promise<string> {
     );
   }
 
-  const approved = await readFile(approvalPath, "utf8");
-  const localApproved = approved.replaceAll(sitePath, ".");
-  return `The human-approved tool manifest is available as a local workspace
-artifact. Read it and use only the tools listed there. Its contents are:\n${localApproved}`;
+  const approved = JSON.parse(await readFile(approvalPath, "utf8")) as {
+    tools?: Array<{ name?: string; description?: string }>;
+  };
+  const tools = (approved.tools ?? [])
+    .map((tool) => `- ${tool.name ?? "unnamed"}: ${tool.description ?? ""}`)
+    .join("\n");
+  return `Use only these human-approved WebMCP tools. Discover them in the
+live browser and do not use unapproved tools:\n${tools}`;
 }
 
 export async function runTest(opts: TestOptions): Promise<StoredTestEvaluation> {
@@ -60,7 +132,6 @@ export async function runTest(opts: TestOptions): Promise<StoredTestEvaluation> 
   const tasks = await loadApprovedTasks(sitePath);
   const runId = randomUUID();
   const taskSetId = taskFingerprint(tasks);
-  const trajectory = createTrajectoryPath("test", "all-tasks", sitePath);
   const approvalPath = path.join(
     sitePath,
     ".webmcpify",
@@ -74,60 +145,69 @@ export async function runTest(opts: TestOptions): Promise<StoredTestEvaluation> 
     console.log(`[test] no .mcp.json found; created ${mcpConfig} for this audit`);
   }
 
-  const prompt = `Run an isolated WebMCP audit against the already-running site at
-${opts.url}. Do not edit the site's files. Use the chrome-devtools MCP tools to
-inspect the live page, infer its core user-facing actions, list the available
-WebMCP tools, and exercise the approved tools through their real tool
-interface.
-
-For every discovered tool, report its name, input used, execution result, and
-any state-dependent registration or unregistration. Also check the site's
-important UI flows, such as search, filtering, navigation, form submission,
-adding or removing items, authentication, or checkout when those actions are
-actually present. Do not assume a domain or invent actions that the site does
-not expose.
+  console.log(`[test] running isolated ${provider} browser audit against ${opts.url}...`);
+  let agentError: string | undefined;
+  const results: Awaited<ReturnType<typeof scoreTask>>[] = [];
+  const trajectories: string[] = [];
+  for (const [index, task] of tasks.entries()) {
+    console.log(`[test] task ${index + 1}/${tasks.length} started: ${task.id}`);
+    const trajectory = createTrajectoryPath("test", task.id, sitePath);
+    trajectories.push(trajectory);
+    const prompt = `Run exactly this one approved WebMCP task against the already-running site at
+${opts.url}. Do not edit the site's files. Use only the live browser and approved
+WebMCP tools. Perform the task; do not merely inspect source or describe steps.
+Leave the resulting state in the browser so the independent evaluator can
+verify it.
 
 ${approvalContext}
 
-The reviewed task list for this run is:
-${JSON.stringify(tasks, null, 2)}
-Attempt every task using only the live browser and approved WebMCP tools.
+Approved task:
+${JSON.stringify(task, null, 2)}
 
-Report each check as pass or fail, include observed details, and do not claim a
-pass from assumptions or from merely inspecting source code.`;
-
-  console.log(`[test] running isolated ${provider} browser audit against ${opts.url}...`);
-
-  const agentWorkspace = await createAgentWorkspace(sitePath);
-  let agentError: string | undefined;
-  try {
-    await runAgent({
-      provider,
-      prompt,
-      cwd: agentWorkspace,
-      allowedTools: "mcp__chrome-devtools__*",
-      mcpConfig,
-      saveTo: trajectory,
-      trajectoryMetadata: {
-        role: "test",
-        runId,
-        sitePath,
-        url: opts.url,
-        approvalPath,
-        isolation: "mcp-only; disposable workspace; no source access",
-        taskSetId,
-      },
-    });
-  } catch (error) {
-    agentError = error instanceof Error ? error.message : String(error);
-    console.error(`[test] agent session failed: ${agentError}`);
-    console.error("[test] continuing with independent live-page scoring...");
-  } finally {
-    await removeAgentWorkspace(agentWorkspace);
+Report the observed result, but do not claim success unless you executed it.`;
+    // Let the first MCP agent initialize/auto-connect Chrome. From the second
+    // task onward, reset through the already-connected CDP browser so each
+    // task remains isolated without preventing autoConnect from doing its job.
+    if (trajectories.length > 1) await resetScoringState(opts.url);
+    const agentWorkspace = await createAgentWorkspace(sitePath);
+    try {
+      await runAgent({
+        provider,
+        prompt,
+        cwd: agentWorkspace,
+        allowedTools: "mcp__chrome-devtools__*",
+        mcpConfig,
+        saveTo: trajectory,
+        trajectoryMetadata: {
+          role: "test",
+          runId,
+          taskId: task.id,
+          sitePath,
+          url: opts.url,
+          approvalPath,
+          isolation: "mcp-only; disposable workspace; no source access",
+          taskSetId,
+        },
+      });
+    } catch (error) {
+      const taskError = error instanceof Error ? error.message : String(error);
+      agentError = agentError ? `${agentError}; ${taskError}` : taskError;
+      console.error(`[test] ${task.id} agent session failed: ${taskError}`);
+    } finally {
+      await removeAgentWorkspace(agentWorkspace);
+    }
+    // Keep the state produced by the task agent. scoreTask's default reset is
+    // intentionally bypassed here; resetting would erase the effect we test.
+    const result = await scoreTask(opts.url, task, { resetStorage: false });
+    results.push(result);
+    console.log(`[test] task ${index + 1}/${tasks.length} ${result.passed ? "passed" : "failed"}: ${task.id}`);
   }
 
-  console.log("[test] agent session complete; running independent evaluator...");
-  const scores = await scoreTasks(opts.url, tasks);
+  const scores = {
+    passed: results.filter((result) => result.passed).length,
+    total: results.length,
+    results,
+  };
   const evaluation: StoredTestEvaluation = {
     version: TEST_EVALUATION_VERSION,
     mode: "webmcp",
@@ -150,13 +230,13 @@ pass from assumptions or from merely inspecting source code.`;
       url: opts.url,
       sitePath,
       taskCount: scores.total,
-      sourceTrajectory: trajectory,
+      sourceTrajectories: trajectories,
       approvalPath,
     }
   );
 
   console.log(`[test] result: ${scores.passed}/${scores.total} tasks passed`);
-  console.log(`[test] raw trajectory saved to ${trajectory}`);
+  console.log(`[test] raw trajectories saved to ${trajectories.join(", ")}`);
   console.log(`[test] evaluation saved to ${evaluationPath}`);
   return evaluation;
 }

@@ -27,19 +27,32 @@ export function proposedToolsPath(sitePath: string): string {
 }
 
 function textFromOutput(raw: string): string {
+  const values: string[] = [];
+  const collect = (value: unknown, key?: string): void => {
+    if (typeof value === "string") {
+      if (!key || ["response", "result", "text", "output", "message", "content"].includes(key)) values.push(value);
+    } else if (Array.isArray(value)) value.forEach((entry) => collect(entry));
+    else if (typeof value === "object" && value !== null) Object.entries(value).forEach(([childKey, childValue]) => collect(childValue, childKey));
+  };
   try {
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed === "string") return parsed;
-    const values: string[] = [];
-    const collect = (value: unknown, key?: string): void => {
-      if (typeof value === "string") {
-        if (!key || ["response", "result", "text", "output", "message", "content"].includes(key)) values.push(value);
-      } else if (Array.isArray(value)) value.forEach((entry) => collect(entry));
-      else if (typeof value === "object" && value !== null) Object.entries(value).forEach(([childKey, childValue]) => collect(childValue, childKey));
-    };
     collect(parsed);
     if (values.length) return values.join("\n");
-  } catch { /* plain provider output */ }
+  } catch {
+    // Codex --json emits one JSON object per line. Parse each event so the
+    // final item.completed agent message can be searched for structured
+    // proposal/task blocks instead of treating the whole stream as plain
+    // text.
+    for (const line of raw.split(/\r?\n/).map((entry) => entry.trim()).filter(Boolean)) {
+      try {
+        collect(JSON.parse(line));
+      } catch {
+        // Preserve the plain-output fallback below for non-JSON providers.
+      }
+    }
+    if (values.length) return values.join("\n");
+  }
   return raw;
 }
 
@@ -82,6 +95,32 @@ function jsonCandidates(text: string): string[] {
   return candidates;
 }
 
+function labeledJsonCandidates(text: string, label: string): string[] {
+  const candidates: string[] = [];
+  // Providers commonly emit either ` ```json TOOL_PROPOSALS_JSON` or put the
+  // label on the line after the language tag. Keep extraction line-oriented so
+  // a later TASKS_JSON block can never be selected as a tool proposal.
+  const fenced = new RegExp(
+    "```(?:json[ \\t]*)?" + label + "[ \\t]*\\r?\\n([\\s\\S]*?)```",
+    "gi"
+  );
+  for (const match of text.matchAll(fenced)) {
+    if (match[1]?.trim()) candidates.push(match[1].trim());
+  }
+  // Codex commonly puts the label on its own line, followed by a blank line
+  // and then a normal ```json fence. Accept that equivalent format while
+  // keeping extraction scoped to the labeled block so TASKS_JSON cannot be
+  // mistaken for a tool proposal.
+  const labelBeforeFence = new RegExp(
+    "(?:^|\\r?\\n)\\s*" + label + "\\s*:?[ \\t]*\\r?\\n\\s*```(?:json[ \\t]*)?\\r?\\n([\\s\\S]*?)```",
+    "gi",
+  );
+  for (const match of text.matchAll(labelBeforeFence)) {
+    if (match[1]?.trim()) candidates.push(match[1].trim());
+  }
+  return candidates;
+}
+
 function proposalValue(parsed: unknown): unknown {
   if (Array.isArray(parsed)) return { tools: parsed };
   if (typeof parsed !== "object" || parsed === null) return parsed;
@@ -120,7 +159,7 @@ function validateSupport(tool: ProposedTool, discovery: DiscoveryResult): void {
   const knownSourceFiles = tool.sourceFiles.filter((file) => knownFiles.has(file));
   if (knownSourceFiles.length === 0) throw new Error(`Tool "${tool.name}" references no source file present in discovery.`);
   if (tool.placement.strategy === "declarative" && !knownFiles.has(tool.placement.file)) throw new Error(`Declarative tool "${tool.name}" must be placed in an existing discovered source file.`);
-  if (!tool.sourceFiles.includes(tool.placement.file)) throw new Error(`Tool "${tool.name}" placement.file must be listed in sourceFiles.`);
+  if (tool.placement.strategy === "declarative" && !tool.sourceFiles.includes(tool.placement.file)) throw new Error(`Declarative tool "${tool.name}" placement.file must be listed in sourceFiles.`);
   if (tool.placement.strategy === "imperative" && discovery.existingWebMCP.length > 0) {
     const integrationFiles = new Set(discovery.existingWebMCP.map((signal) => signal.file));
     if (!integrationFiles.has(tool.placement.file)) throw new Error(`Imperative tool "${tool.name}" should use an existing discovered WebMCP integration file: ${[...integrationFiles].join(", ")}.`);
@@ -152,7 +191,13 @@ export function validateProposedTools(value: unknown, discovery: DiscoveryResult
 
 export function extractAndValidateProposedTools(raw: string, discovery: DiscoveryResult): ProposedTool[] {
   const text = textFromOutput(raw);
-  const candidates = [raw, text, ...jsonCandidates(text)];
+  // Providers also emit TASKS_JSON after the tool proposal. Prefer the
+  // explicitly labelled proposal block so that the task array is never
+  // mistaken for a list of tools.
+  const labeledTools = labeledJsonCandidates(text, "TOOL_PROPOSALS_JSON");
+  const candidates = labeledTools.length > 0
+    ? labeledTools
+    : [raw, text, ...jsonCandidates(text)];
   let lastError: unknown;
   for (const candidate of [...new Set(candidates)]) {
     try {
@@ -167,7 +212,11 @@ export function extractAndValidateProposedTools(raw: string, discovery: Discover
   if (lastError instanceof Error && !lastError.message.includes("is not valid JSON") && !lastError.message.includes("Unexpected token")) {
     throw lastError;
   }
-  throw new Error("Provider output did not contain a valid structured tool proposal.");
+  throw new Error(
+    labeledTools.length > 0
+      ? "The TOOL_PROPOSALS_JSON block was invalid; TASKS_JSON cannot be used as a tool proposal."
+      : "Provider output did not contain a labeled TOOL_PROPOSALS_JSON block."
+  );
 }
 
 export async function writeProposedTools(sitePath: string, tools: ProposedTool[], discoveryPath: string, generationTrajectory: string): Promise<string> {

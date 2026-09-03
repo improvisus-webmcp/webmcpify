@@ -4,13 +4,13 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import {
-  DISCOVERY_GUIDANCE,
   TASK_AUTHORING_PROMPT,
   TOOL_PLACEMENT_GUIDANCE,
   TOOL_PROPOSAL_PROMPT,
 } from "../lib/prompts.js";
 import { createTrajectoryPath } from "../lib/trajectories.js";
 import { createPendingPatch } from "../lib/patches.js";
+import { runGenerationPreflight } from "../lib/preflight.js";
 import { readFile } from "node:fs/promises";
 import { discoveryPath, runDiscovery } from "../lib/discovery.js";
 import { extractAndValidateProposedTools, writeProposedTools } from "../lib/tool-proposals.js";
@@ -22,22 +22,35 @@ import {
 } from "../lib/agent-workspace.js";
 
 export const GENERATE_ONLY_PROMPT = `
-${DISCOVERY_GUIDANCE}
-
-After discovery, draft WebMCP tool registrations for the proposed actions —
+Focused generation: read ./.webmcpify/discovery.json first and draft WebMCP
+tool registrations only for the discovered actions —
 declarative (HTML form attributes) for simple single-input actions, imperative
 (navigator.modelContext) for actions needing custom logic or state. Report the
-discovery findings first, then output the proposed diff and a concise
+relevant discovery findings briefly, then output the proposed diff and a concise
 placement/wiring summary for each tool. Use explicit file paths in the diff.
-Do not deploy or verify — that happens in a separate step.
+Do not deploy or run browser verification — WebMCPify will compile-check this
+disposable workspace before the draft reaches human review.
 
 You are working in a disposable workspace, not the target checkout. Make the
 proposed source edits in this workspace so WebMCPify can capture the exact
 working-tree diff. Never edit .webmcpify artifacts and never claim a diff for
 files you did not actually inspect.
 
+Before importing any function, value, or type from an existing module, inspect
+that module and verify the symbol is actually exported. Never invent a public
+type such as ShopState. If a type is internal, derive the type locally from
+the public API or keep the generated handler independent of that type. Run the
+workspace typecheck after editing and fix generated import/export errors before
+reporting the proposal.
+
 The current working directory is the only project you may access. Do not use
 absolute paths, inspect parent directories, or access any checkout outside it.
+
+Every imperative integration must be wired into code that runs on app load or
+the relevant route, and must safely access navigator.modelContext. Every
+declarative integration must add tool-name to the real rendered form. Do not
+leave a standalone unregistered module. These runtime requirements are checked
+before approval.
 
 ${TOOL_PLACEMENT_GUIDANCE}
 
@@ -79,6 +92,53 @@ handlers.`;
     case "auto":
       return "";
   }
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function repairGeneratedWorkspace(
+  opts: GenerateOptions,
+  sitePath: string,
+  workspace: string,
+  provider: ReturnType<typeof resolveProvider>,
+  preflightError: unknown,
+): Promise<void> {
+  // Keep the repair prompt focused on the actionable tail of compiler output.
+  // The full output remains available in the trajectory/error artifact.
+  const details = errorText(preflightError).slice(-4_000);
+  const repairTrajectory = createTrajectoryPath("generate-fix", undefined, sitePath);
+  console.warn("[generate] preflight failed; requesting one focused fix in the disposable workspace...");
+  await runAgent({
+    provider,
+    prompt: `The generated source in this disposable workspace failed WebMCPify's
+pre-approval compile check. Fix only the reported compiler errors in the
+workspace. Do not redo discovery, change the approved tool names, schemas, or
+task definitions, and do not refactor unrelated code.
+
+Compiler output:
+${details}
+
+Pay special attention to optional WebMCP context values captured by nested
+callbacks: after checking the optional value, assign it to a new explicitly
+typed immutable local and use that local inside every callback. Do not capture
+the optional variable after its guard. Also verify every imported symbol is
+exported by its source module; do not change unrelated target application code
+just to provide an export for generated code. Make the smallest source edit
+needed, then stop; WebMCPify will run the compile check again before human
+review.`,
+    cwd: workspace,
+    allowedTools: "Read,Edit",
+    saveTo: repairTrajectory,
+    trajectoryMetadata: {
+      role: "generate-fix",
+      sitePath,
+      sourceTrajectory: opts.trajectoryMetadata?.sourceTrajectory,
+      preflightError: details,
+      method: opts.method,
+    },
+  });
 }
 
 export interface GenerateOptions {
@@ -126,7 +186,7 @@ ${opts.context}`
   // Do not expose the real checkout path to an unrestricted provider process.
   // The provider receives a local copy in its disposable workspace below.
   const agentDiscovery = { ...discovery, targetProject: "." };
-  const prompt = [GENERATE_ONLY_PROMPT, `The structured discovery has been completed and is available at ./.webmcpify/discovery.json in the current workspace. Use this data as the source of truth and do not invent actions:\n${JSON.stringify(agentDiscovery, null, 2)}`, strategy, failureContext]
+  const prompt = [GENERATE_ONLY_PROMPT, `The structured discovery is available at ./.webmcpify/discovery.json. Read that file as the source of truth; do not invent actions or repeat its full contents in your response.`, strategy, failureContext]
     .filter(Boolean)
     .join("\n\n");
 
@@ -162,6 +222,20 @@ ${opts.context}`
       },
     });
     workspaceDiff = await readAgentWorkspaceDiff(agentWorkspace);
+    if (!workspaceDiff.trim()) {
+      throw new Error(
+        "The generation agent did not modify any files in its disposable workspace. " +
+        "Provider-reported diffs are informational only; no source patch can be created safely."
+      );
+    }
+    try {
+      await runGenerationPreflight(sitePath, agentWorkspace);
+    } catch (error) {
+      await repairGeneratedWorkspace(opts, sitePath, agentWorkspace, provider, error);
+      workspaceDiff = await readAgentWorkspaceDiff(agentWorkspace);
+      await runGenerationPreflight(sitePath, agentWorkspace);
+    }
+    await assertGeneratedWebMcpWiring(agentWorkspace, discovery, workspaceDiff);
   } finally {
     await removeAgentWorkspace(agentWorkspace);
   }
@@ -171,7 +245,7 @@ ${opts.context}`
     const proposalFile = await writeProposedTools(sitePath, tools, discoveryPath(sitePath), saveTo);
     const patch = await createPendingPatch(
       sitePath,
-      workspaceDiff || await readFile(saveTo, "utf8"),
+      workspaceDiff,
       saveTo,
     );
     console.log(`[generate] draft saved to ${saveTo}`);
@@ -183,5 +257,29 @@ ${opts.context}`
   } catch (error) {
     console.error(`[generate] ${error instanceof Error ? error.message : String(error)}`);
     throw error;
+  }
+}
+
+async function assertGeneratedWebMcpWiring(
+  workspace: string,
+  discovery: Awaited<ReturnType<typeof runDiscovery>>,
+  diff: string,
+): Promise<void> {
+  const source = (await Promise.all(discovery.sourceFiles.map(async (file) => {
+    try {
+      return await readFile(path.join(workspace, file), "utf8");
+    } catch {
+      return "";
+    }
+  }))).join("\n");
+  // Include the actual diff because generation may create a new integration
+  // file that was not present in the pre-generation discovery file list.
+  const generatedSource = `${source}\n${diff}`;
+  const hasImperativeRuntime = /navigator\s*\.\s*modelContext|registerTool\s*\(/.test(generatedSource);
+  const hasDeclarativeRuntime = /tool-name\s*=|toolname\s*=/.test(generatedSource);
+  if (!hasImperativeRuntime && !hasDeclarativeRuntime) {
+    throw new Error(
+      "Generated source has no WebMCP runtime wiring. Add navigator.modelContext registration or tool-name on the real form before approval.",
+    );
   }
 }

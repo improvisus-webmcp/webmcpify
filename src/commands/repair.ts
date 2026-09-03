@@ -17,6 +17,7 @@ import {
   latestTrajectoryPath,
 } from "../lib/trajectories.js";
 import { createPendingPatch } from "../lib/patches.js";
+import { runGenerationPreflight } from "../lib/preflight.js";
 import type { TaskResult } from "../lib/scoring.js";
 import type { StoredTestEvaluation } from "./test.js";
 
@@ -26,6 +27,7 @@ export interface RepairOptions {
   url?: string;
   task?: string;
   evaluationPath?: string;
+  failureDetail?: string;
   durable?: boolean;
   maxRepairs?: number | string;
 }
@@ -140,6 +142,7 @@ async function workspaceDiff(workspace: string): Promise<string> {
       ".",
       ":(exclude).webmcpify/**",
       ":(exclude).agents/**",
+      ":(exclude)node_modules/**",
       ":(exclude)tasks.json",
     ],
     { cwd: workspace },
@@ -155,7 +158,24 @@ async function runPlainRepair(opts: RepairOptions): Promise<void> {
     evaluation,
     path: evaluationPath,
   } = await readLastEvaluation(sitePath, opts.evaluationPath);
-  const failedTasks = selectFailedTasks(evaluation, opts.task);
+  let failedTasks: TaskResult[];
+  const selectedResult = opts.task
+    ? evaluation.scores.results.find((result) => result.task === opts.task)
+    : undefined;
+  if (selectedResult && !selectedResult.passed) {
+    failedTasks = selectFailedTasks(evaluation, opts.task);
+  } else if (selectedResult && opts.failureDetail) {
+    // Temporal may catch a failure from its isolated per-task run even when
+    // the earlier full WebMCP evaluation passed that task. Keep the approved
+    // task definition, but carry the durable run's actual failure evidence.
+    failedTasks = [{
+      ...selectedResult,
+      passed: false,
+      detail: opts.failureDetail,
+    }];
+  } else {
+    failedTasks = selectFailedTasks(evaluation, opts.task);
+  }
 
   if (failedTasks.length === 0) {
     throw new Error("The last test passed every task; there is nothing to repair.");
@@ -166,7 +186,8 @@ async function runPlainRepair(opts: RepairOptions): Promise<void> {
   const workspace = await createRepairWorkspace(sitePath);
   const prompt = repairPrompt(evaluation, evaluationPath, sitePath, failedTasks);
 
-  console.log(`[repair] patching ${failedTasks.length} failed task(s) via ${provider}...`);
+  console.log(`[repair] starting repair for ${failedTasks.length} failed task(s) via ${provider}...`);
+  console.log(`[repair] scope: ${failedTasks.map((task) => task.task).join(", ")}`);
 
   try {
     await runAgent({
@@ -207,6 +228,7 @@ async function runPlainRepair(opts: RepairOptions): Promise<void> {
 
   try {
     const diff = await workspaceDiff(workspace);
+    await runGenerationPreflight(sitePath, workspace);
     const patchMetadata = await createPendingPatch(sitePath, diff, repairTrajectory, {
       repair: {
         sourceEvaluation: evaluationPath,

@@ -1,11 +1,10 @@
-import { runGenerate } from "../commands/generate.js";
 import { runApply } from "../commands/apply.js";
 import {
   runReviewPrompt,
   type ReviewResult,
 } from "../commands/review.js";
-import { scoreTasks } from "../lib/scoring.js";
-import { loadApprovedTasks } from "../lib/tasks.js";
+import { runApprovedTask } from "../commands/test.js";
+import { runRepair } from "../commands/repair.js";
 import { createTrajectoryArtifact } from "../lib/trajectories.js";
 
 export interface ActivityTaskResult {
@@ -19,17 +18,18 @@ export async function generateActivity(
   path: string,
   failureDetail?: string,
   provider?: string,
-  attempt?: number
+  attempt?: number,
+  url?: string,
+  task?: string,
 ): Promise<void> {
-  await runGenerate({
+  if (!url || !task) throw new Error("Temporal targeted repair requires the task URL and task ID.");
+  await runRepair({
     path,
-    context: failureDetail,
+    url,
+    task,
     provider,
-    preserveApprovalState: true,
-    trajectoryMetadata: {
-      durable: true,
-      attempt,
-    },
+    durable: false,
+    failureDetail,
   });
 }
 
@@ -40,18 +40,10 @@ export async function testActivity(
   task: string,
   attempt?: number,
   runId?: string,
-  taskSetId?: string
+  taskSetId?: string,
+  provider?: string,
 ): Promise<ActivityTaskResult> {
-  const tasks = await loadApprovedTasks(sitePath);
-  const { results } = await scoreTasks(url, tasks);
-  const result = results.find((candidate) => candidate.task === task);
-  if (!result) {
-    throw new Error(
-      `Unknown scoring task "${task}". Available tasks: ${tasks
-        .map((candidate) => candidate.id)
-        .join(", ")}`
-    );
-  }
+  const result = await runApprovedTask({ path: sitePath, url, provider, taskId: task, runId, taskSetId });
 
   const taskResult = {
     task: result.task,
@@ -69,6 +61,7 @@ export async function testActivity(
       url,
       task,
       attempt,
+      sitePath,
       tasksPath: `${sitePath}/tasks.json`,
       durable: true,
       runId,
