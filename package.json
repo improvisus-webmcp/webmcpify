@@ -5,10 +5,12 @@
   "main": "dist/cli.js",
   "type": "module",
   "bin": {
-    "webmcpify": "dist/cli.js"
+    "webmcpify": "dist/cli.js",
+    "webmcpify-mcp": "dist/mcp/server.js"
   },
   "scripts": {
     "webmcpify": "node dist/cli.js",
+    "mcp": "node dist/mcp/server.js",
     "build": "tsc",
     "generate": "node dist/cli.js generate",
     "review": "node dist/cli.js review",
@@ -25,7 +27,7 @@
     "verify:final-eval": "node scripts/verify-final-eval.mjs",
     "temporal:worker": "node dist/temporal/worker.js",
     "dev": "tsx watch src/cli.ts",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "node scripts/verify-mcp.mjs"
   },
   "keywords": [
     "webmcp",
