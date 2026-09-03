@@ -29,6 +29,31 @@ WebMCPify does not assume that an application is a particular type of product or
 
 Generated tools are therefore grounded in real application behaviour rather than being invented from a high-level description.
 
+## Hackathon demo homepage
+
+The `demo/` folder is a separate Next.js project for the public WebMCP
+Challenge URL. It explains WebMCPify and registers four native WebMCP tools
+on the page: `explain_webmcpify`, `show_workflow_step`, and
+`get_webmcpify_setup`.
+
+Run it locally:
+
+```bash
+cd demo
+pnpm install
+pnpm dev
+```
+
+Build for deployment:
+
+```bash
+cd demo
+pnpm build
+```
+
+Next is configured for static export, so `demo/out/` can be deployed to
+Vercel, Netlify, Cloudflare Pages, or any static host.
+
 Temporal is optional for the normal CLI/MCP workflow, but required to complete `final-eval`: that command always runs the final durable Temporal evaluation, even when no repair is needed.
 
 ## MCP adapter for coding agents
