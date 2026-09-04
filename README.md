@@ -110,9 +110,22 @@ Run the CLI commands below from the WebMCPify checkout, or install the published
 ## Hackathon demo homepage
 
 The `demo/` folder is a separate Next.js project for the public WebMCP
-Challenge URL. It explains WebMCPify and registers four native WebMCP tools
-on the page: `explain_webmcpify`, `show_workflow_step`, and
-`get_webmcpify_setup`.
+Challenge URL. It explains WebMCPify and registers eight native WebMCP tools
+with `document.modelContext`:
+
+- `explain_webmcpify` — explain the product and human + coding-agent workflow;
+- `show_workflow_step` — highlight Discover, Baseline, Generate, Review, Apply,
+  WebMCP test, Repair, or Evaluate;
+- `get_webmcpify_setup` — return project requirements and the end-to-end setup;
+- `get_webmcpify_safety_model` — explain approvals, patches, isolation, rollback,
+  and independent evidence;
+- `get_webmcpify_cli_commands` — return the complete CLI command set;
+- `get_webmcpify_terminal_setup` — explain the target, Chrome, Temporal, worker,
+  and evaluation terminals;
+- `get_webmcpify_mcp_setup` — return MCP installation, tools, workspace boundary,
+  and approval flow; and
+- `get_webmcpify_npm_setup` — explain installation and use of the published npm
+  package.
 
 Run it locally:
 
