@@ -137,6 +137,41 @@ button { font: inherit; }
 .footer .logo { color: var(--ink); font-size: 15px; }
 .footer .logo b { width: 25px; height: 25px; font-size: 12px; }
 
+.playground-page { min-height: 100vh; background: var(--paper); }
+.playground-hero { padding-top: 75px; padding-bottom: 55px; }
+.playground-hero h1 { max-width: 760px; margin: 22px 0 20px; font: 500 clamp(50px, 7vw, 88px)/.98 "Space Grotesk", sans-serif; letter-spacing: -.08em; }
+.playground-hero h1 em { font-family: Georgia, serif; font-weight: 400; color: #6f8565; }
+.playground-lede { max-width: 620px; color: var(--muted); font-size: 18px; line-height: 1.65; }
+.playground-status { display: flex; gap: 25px; margin-top: 30px; color: #839078; font: 10px "DM Mono", monospace; text-transform: uppercase; letter-spacing: .06em; }
+.playground-grid { display: grid; grid-template-columns: 1.25fr .75fr; gap: 20px; padding-bottom: 95px; }
+.playground-card { padding: 32px; border: 1px solid var(--line); border-radius: 12px; background: #fff; box-shadow: 0 18px 45px #1833270d; }
+.playground-card h2, .playground-explain h2 { margin: 20px 0 12px; font: 500 clamp(30px, 4vw, 48px)/1.05 "Space Grotesk", sans-serif; letter-spacing: -.07em; }
+.playground-card > p:not(.eyebrow), .playground-explain p { color: var(--muted); font-size: 14px; line-height: 1.65; }
+.playground-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 27px 0; }
+.playground-actions button { padding: 13px 14px; border: 1px solid #bfcead; border-radius: 6px; background: #eef5e6; color: #50643a; font: 600 11px "DM Mono", monospace; text-align: left; cursor: pointer; }
+.playground-actions button:hover { border-color: #829c4b; background: #e4efcf; }
+.playground-label { display: block; margin: 22px 0 8px; color: #829078; font: 10px "DM Mono", monospace; text-transform: uppercase; }
+.playground-card textarea { width: 100%; min-height: 86px; resize: vertical; padding: 12px; border: 1px solid var(--line); border-radius: 6px; color: var(--ink); background: #f8faf5; font: 12px/1.5 "DM Mono", monospace; }
+.playground-result { min-height: 150px; overflow: auto; margin: 18px 0 0; padding: 18px; border-radius: 7px; background: #1d2b25; color: #cce0c1; font: 11px/1.6 "DM Mono", monospace; white-space: pre-wrap; }
+.approval-request { display: flex; gap: 14px; align-items: center; margin-bottom: 18px; padding: 14px 18px; border: 1px solid #db9b6e; border-radius: 7px; background: #fff0e6; color: #7a4c35; font-size: 13px; }
+.approval-request strong { font: 600 12px "Space Grotesk", sans-serif; white-space: nowrap; }
+.approval-request span { font-size: 12px; }
+.approval-card { background: #e9efdf; }
+.approval-toggle { display: flex; gap: 11px; align-items: flex-start; margin: 30px 0; padding: 16px; border: 1px solid #bdcdb0; border-radius: 7px; color: #536144; font-size: 13px; line-height: 1.45; cursor: pointer; }
+.approval-toggle input { accent-color: #77953d; margin-top: 2px; }
+.state-readout { display: flex; justify-content: space-between; padding: 15px 0; border-top: 1px solid #bdcbb3; color: #718064; font: 11px "DM Mono", monospace; }
+.state-readout strong { color: var(--ink); }
+.playground-explain { display: grid; grid-template-columns: .8fr 1.2fr; gap: 70px; padding-top: 95px; padding-bottom: 105px; border-top: 1px solid var(--line); }
+.playground-explain h2 em { font-family: Georgia, serif; font-weight: 400; color: #6f8565; }
+.playground-points { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+.playground-points article { padding-top: 17px; border-top: 1px solid #bdcbb3; }
+.playground-points b { color: #91a368; font: 10px "DM Mono", monospace; }
+.playground-points h3 { margin: 18px 0 8px; font: 600 15px "Space Grotesk", sans-serif; }
+.playground-points p { margin: 0; font-size: 13px; }
+.playground-points code { color: #627a32; font: 11px "DM Mono", monospace; }
+@media (max-width: 800px) { .playground-grid, .playground-explain { grid-template-columns: 1fr; gap: 25px; } .playground-points { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .playground-actions, .playground-points { grid-template-columns: 1fr; } .playground-status { flex-direction: column; gap: 10px; } }
+
 
 @media (max-width: 900px) {
   .wrap { padding-left: 20px; padding-right: 20px; }

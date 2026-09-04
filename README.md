@@ -127,6 +127,27 @@ with `document.modelContext`:
 - `get_webmcpify_npm_setup` — explain installation and use of the published npm
   package.
 
+The homepage also provides `open_webmcpify_playground`, and the playground
+provides `return_to_webmcpify_home`. Tools are page-scoped: after navigation,
+the agent should discover the new document's tools again; it does not receive
+both pages' tools as one combined list. On the playground, a consequential
+tool returns `approvalRequired` and displays a human approval request. The
+human must approve in the page before the agent can retry the action.
+
+It also includes a `/playground` route for trying page-scoped WebMCP tools with
+React state and the same-origin `/api/playground` backend. The playground
+exposes `get_playground_state`, `call_playground_api`,
+`request_playground_change`, `get_webmcp_security_notes`, and
+`inspect_registered_tools`. The last tool uses the native `getTools()` API;
+the page also listens for `toolchange` events and refreshes its inventory.
+The playground also exposes `create_demo_payment` and
+`confirm_demo_payment`: a validated, local-only payment simulation that never
+accepts card data or moves money. Confirmation is blocked until a human
+approves it in the page.
+API operations
+are allowlisted and validated; state changes stop at an explicit human
+approval checkpoint, and instruction-like input is treated as untrusted data.
+
 Run it locally:
 
 ```bash
@@ -142,8 +163,9 @@ cd demo
 pnpm build
 ```
 
-Next is configured for static export, so `demo/out/` can be deployed to
-Vercel, Netlify, Cloudflare Pages, or any static host.
+The demo uses a standard Next.js server because the playground API needs a
+backend route. Deploy the `demo/` project to Vercel or another Next.js host;
+the public homepage and `/playground` route will be available together.
 
 Temporal is required for `final-eval` and durable repair. The plain discovery, generation, review, apply, and browser-test commands can run without Temporal.
 
