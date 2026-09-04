@@ -89,13 +89,13 @@ export async function assertWebMcpRuntime(url: string): Promise<void> {
     ({ page } = await getIsolatedPage(url, false));
     try {
       await page.waitForFunction(
-        () => Boolean((navigator as Navigator & { modelContext?: unknown }).modelContext),
+        () => Boolean((document as Document & { modelContext?: unknown }).modelContext),
         undefined,
         { timeout: 3_000 },
       );
     } catch {
       throw new Error(
-        "Chrome does not expose navigator.modelContext. Restart the dedicated test browser with " +
+        "Chrome does not expose document.modelContext. Restart the dedicated test browser with " +
         "--enable-features=DevToolsWebMCPSupport,WebMCP and retry."
       );
     }

@@ -143,7 +143,7 @@ export async function discoverProject(sitePath: string): Promise<DiscoveryResult
     apis.push(...lineSignals(relative, content, [["request", /\bfetch\s*\(|axios\.|\bgraphql\b|\/api\//i], ["handler", /app\.(?:get|post|put|patch|delete)\s*\(|export\s+(?:async\s+)?function\s+(?:GET|POST|PUT|PATCH|DELETE)\b/i]]));
     authentication.push(...lineSignals(relative, content, [["authentication", /(?:signIn|signOut|login|logout|useAuth|session|currentUser|clerk|next-auth|supabase\.auth|firebase\.auth)/i]]));
     state.push(...lineSignals(relative, content, [["state", /useState\s*\(|useReducer\s*\(|createContext\s*\(|create\s*\(|zustand|redux|mobx|pinia|localStorage|sessionStorage/i]]));
-    existingWebMCP.push(...lineSignals(relative, content, [["webmcp", /navigator\.modelContext|registerTool\s*\(|useWebMCP|useWebMcp|use-webmcp-tool|webmcp-tools|toolName\s*:/i]]));
+    existingWebMCP.push(...lineSignals(relative, content, [["webmcp", /document\.modelContext|navigator\.modelContext|registerTool\s*\(|useWebMCP|useWebMcp|use-webmcp-tool|webmcp-tools|toolName\s*:/i]]));
   }
 
   const sitemapRaw = await readOptional(sitePath, "public/sitemap.xml") ?? await readOptional(sitePath, "sitemap.xml");

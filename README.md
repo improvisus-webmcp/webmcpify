@@ -29,6 +29,80 @@ WebMCPify does not assume that an application is a particular type of product or
 
 Generated tools are therefore grounded in real application behaviour rather than being invented from a high-level description.
 
+Generation, testing, repair, and apply use the official [WebMCP specification](https://webmachinelearning.github.io/webmcp/) and [Chrome WebMCP implementation guide](https://developer.chrome.com/docs/ai/webmcp) as references. WebMCPify follows the draft API's `ModelContext` registration model, structured schemas, executable callbacks, declarative form integration, cancellation, permissions, and security guidance; browser support is still checked rather than assumed.
+
+The complete local implementation and security checklist is kept in [src/lib/webmcp-spec-guidance.ts](src/lib/webmcp-spec-guidance.ts). It is included in the generation and repair prompts and covers tool lifecycle, declarative and imperative tools, permissions, accessibility, prompt injection/tool poisoning, output injection, intent misrepresentation, privacy leakage, origin boundaries, and consequential actions.
+
+For reproducible browser testing, start headless Google Chrome in a separate terminal with `pnpm chrome:headless http://localhost:5173`. The launcher enables WebMCP, remote CDP, and an isolated temporary profile; baseline, WebMCP tests, repair retests, and Temporal activities connect through `WEBMCPIFY_CDP_URL`.
+
+## Quick start
+
+The headless launcher enables the WebMCP and DevTools WebMCP features, remote CDP, and an isolated profile. It does not enable every experimental Chrome feature. WebMCP is experimental: in supported Chrome builds, enable chrome://flags/#enable-webmcp-testing and relaunch Chrome if WebMCP is unavailable. The generated Chrome DevTools MCP configuration enables --category-experimental-webmcp for WebMCP discovery and execution.
+
+Install WebMCPify and prepare the target project:
+
+```bash
+git clone <WEBMCPIFY_REPOSITORY>
+cd WebMCPify
+pnpm install
+pnpm build
+
+cd /path/to/target-project
+git init
+git add -A
+git commit -m "Initial target snapshot"
+pnpm install
+pnpm dev
+```
+
+For the complete browser and durable-evaluation workflow, use separate terminals:
+
+```bash
+cd /path/to/WebMCPify
+pnpm chrome:headless http://localhost:5173
+temporal server start-dev
+pnpm temporal:worker
+```
+
+Then run the human-approved workflow:
+
+```bash
+cd /path/to/WebMCPify
+pnpm webmcpify final-eval \
+  --path /path/to/target-project \
+  --url http://localhost:5173 \
+  --provider codex
+```
+
+`final-eval` performs discovery, generation, human review, baseline testing, approved application, WebMCP testing, repair when approved, and durable Temporal evaluation.
+
+### CLI commands
+
+```bash
+pnpm webmcpify --help
+pnpm webmcpify --version
+
+pnpm webmcpify init --path /path/to/target-project
+pnpm webmcpify init --path /path/to/target-project --with-temporal
+pnpm webmcpify discover --path /path/to/target-project
+pnpm webmcpify generate --path /path/to/target-project --provider codex --method auto
+pnpm webmcpify review --path /path/to/target-project --port 4173
+pnpm webmcpify apply --path /path/to/target-project
+pnpm webmcpify baseline --path /path/to/target-project --url http://localhost:5173 --provider codex
+pnpm webmcpify test --path /path/to/target-project --url http://localhost:5173 --provider codex
+pnpm webmcpify eval --path /path/to/target-project
+pnpm webmcpify repair --path /path/to/target-project --provider codex
+pnpm webmcpify repair --path /path/to/target-project \
+  --url http://localhost:5173 --task task-1 --provider codex \
+  --durable --max-repairs 3
+pnpm webmcpify final-eval --path /path/to/target-project \
+  --url http://localhost:5173 --provider codex --review-port 4173
+```
+
+Use `--durable` for Temporal-backed repair; it requires `--url` and `--task`. `final-eval` includes the Temporal evaluation stage.
+
+Run the CLI commands below from the WebMCPify checkout, or use the published package with `npx webmcpify`.
+
 ## Hackathon demo homepage
 
 The `demo/` folder is a separate Next.js project for the public WebMCP
@@ -127,7 +201,7 @@ target-site/.webmcpify/discovery.json
 The generation agent uses the discovery result as its source of truth.
 
 It proposes:
-Generation uses the discovery result and an AI provider to draft WebMCP integrations grounded in real application capabilities. It supports declarative form integrations and imperative `navigator.modelContext` registrations, with schemas, handlers, placement guidance, and 5–6 browser-verifiable tasks.
+Generation uses the discovery result and an AI provider to draft WebMCP integrations grounded in real application capabilities. It supports declarative form integrations and imperative `document.modelContext` registrations, with current titles, annotations, strict schemas, handlers, placement guidance, and 5–6 browser-verifiable tasks. Results are plain serializable values, not MCP content envelopes.
 
 * WebMCP tool definitions
 * parameters and validation
@@ -1111,7 +1185,9 @@ node dist/cli.js repair \
   --path ./target-site \
   --url http://localhost:5173 \
   --task "task-1" \
-  --provider antigravity
+  --provider antigravity \
+  --durable \
+  --max-repairs 3
 ```
 
 The durable workflow preserves retry state and human-gate state.

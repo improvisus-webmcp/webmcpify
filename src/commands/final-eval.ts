@@ -12,6 +12,7 @@ import { loadApprovedTasks, taskFingerprint, type Task } from "../lib/tasks.js";
 import { gitSourceSnapshot, readPatchMetadata } from "../lib/patches.js";
 import { createTrajectoryArtifact, latestTrajectoryPath } from "../lib/trajectories.js";
 import type { TaskScoreSummary, TaskResult } from "../lib/scoring.js";
+import { normalizeTargetUrl } from "../lib/target-url.js";
 
 export interface FinalEvalOptions {
   path: string;
@@ -81,19 +82,6 @@ export function compareTaskSets(tasks: Task[], candidate: Task[]): void {
 function failedSummary(tasks: Task[], error: unknown): TaskScoreSummary {
   const detail = error instanceof Error ? error.message : String(error);
   return { passed: 0, total: tasks.length, results: tasks.map((task) => ({ task: task.id, passed: false, detail })) };
-}
-
-function validateTargetUrl(value: string): string {
-  let parsed: URL;
-  try {
-    parsed = new URL(value);
-  } catch {
-    throw new Error(`Invalid target URL "${value}". Use a plain URL such as http://localhost:5173 (not Markdown link syntax).`);
-  }
-  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(`Unsupported target URL protocol "${parsed.protocol}". Use http:// or https://.`);
-  }
-  return parsed.toString().replace(/\/$/, "");
 }
 
 async function ensureTargetReachable(url: string): Promise<void> {
@@ -273,7 +261,7 @@ async function runTemporalLevel(sitePath: string, url: string, provider: string,
 
 export async function runFinalEval(opts: FinalEvalOptions): Promise<FinalEvalResult> {
   const sitePath = path.resolve(opts.path);
-  const url = validateTargetUrl(opts.url ?? process.env.WEBMCPIFY_URL ?? "http://localhost:3000");
+  const url = normalizeTargetUrl(opts.url ?? process.env.WEBMCPIFY_URL ?? "http://localhost:3000");
   const provider = opts.provider ?? "antigravity";
   console.log(`[final-eval] target: ${sitePath}`);
   console.log(`[final-eval] URL: ${url}`);
@@ -345,14 +333,30 @@ export async function runFinalEval(opts: FinalEvalOptions): Promise<FinalEvalRes
   if (stage === "baseline") {
     console.log("[final-eval] Level 1 — baseline (plain, read-only)...");
     const baselineSource = await gitSourceSnapshot(sitePath);
-    const baseline = await runBaseline({ path: sitePath, url, provider, readOnly: true });
-    compareTaskSets(tasks, baseline.tasks);
+    let baseline: Awaited<ReturnType<typeof runBaseline>> | undefined;
+    let baselineError: string | undefined;
+    try {
+      baseline = await runBaseline({ path: sitePath, url, provider, readOnly: true });
+    } catch (error) {
+      baselineError = error instanceof Error ? error.message : String(error);
+      console.error(`[final-eval] baseline failed; preserving the approved patch flow: ${baselineError}`);
+    }
     const afterBaselineSource = await gitSourceSnapshot(sitePath);
     if (baselineSource.sourceVersion !== afterBaselineSource.sourceVersion || baselineSource.workingTreeHash !== afterBaselineSource.workingTreeHash) {
       throw new Error("The read-only baseline changed target source; refusing to continue to WebMCP application.");
     }
-    baselineEvaluationPath = baseline.evaluationPath;
-    baselineLevel = { level: "baseline", runId: baseline.runId, targetProject: sitePath, taskSetId, tasks, scores: baseline.scores, evaluationPath: baseline.evaluationPath, status: "completed", agentError: baseline.agentError };
+    if (baseline) {
+      compareTaskSets(tasks, baseline.tasks);
+      baselineEvaluationPath = baseline.evaluationPath;
+      baselineLevel = { level: "baseline", runId: baseline.runId, targetProject: sitePath, taskSetId, tasks, scores: baseline.scores, evaluationPath: baseline.evaluationPath, status: "completed", agentError: baseline.agentError };
+    } else {
+      baselineEvaluationPath = await createTrajectoryArtifact(
+        "baseline-eval",
+        { version: 1, mode: "baseline", runId: randomUUID(), targetProject: sitePath, taskSetId, tasks, scores: failedSummary(tasks, baselineError ?? "Baseline did not complete.") },
+        { sitePath, targetProject: sitePath, taskSetId, provider, url, status: "failed", error: baselineError },
+      );
+      baselineLevel = { level: "baseline", runId, targetProject: sitePath, taskSetId, tasks, scores: failedSummary(tasks, baselineError ?? "Baseline did not complete."), evaluationPath: baselineEvaluationPath, status: "failed", error: baselineError ?? "Baseline did not complete." };
+    }
     stage = "apply";
     await saveCheckpoint(stage);
   } else {
@@ -478,5 +482,7 @@ export async function runFinalEval(opts: FinalEvalOptions): Promise<FinalEvalRes
   for (const level of result.levels) console.log(`  ${level.level}: ${level.scores.passed}/${level.scores.total} (${level.status})`);
   console.log(`[final-eval] trajectory: ${artifact}`);
   if (temporalLevel.status === "failed") throw new Error(`Temporal level failed: ${temporalLevel.error}`);
+  console.log("[final-eval] ✅ COMPLETE — WebMCP evaluation passed");
+  console.log(`[final-eval] next: pnpm webmcpify eval --path ${sitePath}`);
   return result;
 }

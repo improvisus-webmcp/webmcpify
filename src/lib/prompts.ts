@@ -1,3 +1,5 @@
+export { WEBMCP_SPEC_GUIDANCE, WEBMCP_SPEC_URL } from "./webmcp-spec-guidance.js";
+
 export const DISCOVERY_GUIDANCE = `
 DISCOVERY PHASE — complete this before drafting or changing any WebMCP tools.
 Do not read the entire codebase file by file. Use these signals to narrow down
@@ -61,8 +63,9 @@ file organization and runtime conventions.
 - The WebMCP runtime object may be declared as \`unknown\` by a site's ambient
   TypeScript or Cloudflare worker types. An \`in\` check alone does not narrow
   that value. Use a local, explicit WebMCP context interface and assign a
-  narrowed immutable value before calling \`registerTool\` or
-  \`unregisterTool\`. If a nested subscriber or handler needs the context,
+  narrowed immutable value before calling \`registerTool\`. Unregister by
+  aborting the registration signal; do not invent or call \`unregisterTool\`.
+  If a nested subscriber or handler needs the context,
   capture the narrowed value, not the optional value, for example:
   \`const discoveredContext = (navigator as Navigator & { modelContext?: WebMCPContext }).modelContext; if (!discoveredContext) return; const modelContext: WebMCPContext = discoveredContext;\`.
   Use \`modelContext\` inside every nested callback; never capture
@@ -84,7 +87,7 @@ management — not on trusting the agent's own claim of success.
 
 Include at least one task that checks tool availability itself, such as
 confirming a conditionally registered tool is or is not present through
-navigator.modelContext.tools. Do not include tasks whose effect cannot be
+document.modelContext.getTools(). Do not include tasks whose effect cannot be
 verified this way.
 
 Output the task proposal as JSON:
@@ -99,8 +102,14 @@ fenced json block labelled TOOL_PROPOSALS_JSON:
   "tools": [{
     "id": "stable-tool-id",
     "name": "tool_name",
+    "title": "Human-readable tool title",
     "description": "What the tool does",
-    "parameters": { "type": "object", "properties": {}, "required": [] },
+    "parameters": { "type": "object", "properties": {}, "required": [], "additionalProperties": false },
+    "annotations": {
+      "readOnlyHint": false,
+      "untrustedContentHint": false,
+      "consequentialHint": false
+    },
     "implementation": {
       "handler": "path/to/file.ts#handler-or-function",
       "action": "the discovered action this invokes",

@@ -64,6 +64,7 @@ button { font: inherit; }
 .two-col { display: grid; grid-template-columns: 1.15fr 1fr; gap: 100px; margin-top: 28px; }
 .section h2, .workflow h2, .cta h2 { margin: 0; font: 500 clamp(38px, 4vw, 57px)/1.02 "Space Grotesk", sans-serif; letter-spacing: -.075em; }
 .two-col p { max-width: 450px; margin: 0 0 18px; color: var(--muted); font-size: 16px; line-height: 1.7; }
+.spec-link { color: #627a32; font-weight: 700; text-decoration: underline; text-decoration-color: #b0c875; text-underline-offset: 3px; }
 
 .workflow { padding: 104px 0 116px; background: var(--night); color: #f0f5e9; }
 .workflow h2 { color: #f0f5e9; }

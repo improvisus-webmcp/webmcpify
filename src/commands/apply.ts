@@ -14,6 +14,7 @@ import {
 } from "../lib/patches.js";
 import { scoreTasks } from "../lib/scoring.js";
 import { loadTasks } from "../lib/tasks.js";
+import { WEBMCP_SPEC_URL } from "../lib/webmcp-spec-guidance.js";
 
 interface ApplyOptions { path?: string }
 
@@ -189,6 +190,7 @@ export async function runApply(opts: ApplyOptions): Promise<void> {
   try {
     console.log("[apply] validating approved patch...");
     await runGit(sitePath, ["apply", "--check", "--whitespace=nowarn", patch]);
+    console.log(`[apply] WebMCP compatibility reference: ${WEBMCP_SPEC_URL}`);
     console.log("[apply] applying approved patch...");
     await runGit(sitePath, ["apply", "--whitespace=nowarn", patch]);
     buildScripts = await runBuild(sitePath);

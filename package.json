@@ -9,7 +9,7 @@
     "webmcpify-mcp": "dist/mcp/server.js"
   },
   "scripts": {
-    "webmcpify": "node dist/cli.js",
+    "webmcpify": "pnpm build && node dist/cli.js",
     "mcp": "node dist/mcp/server.js",
     "build": "tsc",
     "generate": "node dist/cli.js generate",
@@ -26,6 +26,7 @@
     "verify:evaluation": "node scripts/verify-evaluation.mjs",
     "verify:final-eval": "node scripts/verify-final-eval.mjs",
     "temporal:worker": "node dist/temporal/worker.js",
+    "chrome:headless": "node scripts/start-headless-chrome.mjs",
     "dev": "tsx watch src/cli.ts",
     "test": "node scripts/verify-mcp.mjs"
   },

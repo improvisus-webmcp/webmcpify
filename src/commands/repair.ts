@@ -10,6 +10,7 @@ import { writeChromeDevtoolsMcpConfig } from "../lib/mcp-config.js";
 import {
   DISCOVERY_GUIDANCE,
   TOOL_PLACEMENT_GUIDANCE,
+  WEBMCP_SPEC_GUIDANCE,
 } from "../lib/prompts.js";
 import {
   createTrajectoryArtifact,
@@ -18,6 +19,7 @@ import {
 } from "../lib/trajectories.js";
 import { createPendingPatch } from "../lib/patches.js";
 import { runGenerationPreflight } from "../lib/preflight.js";
+import { normalizeTargetUrl } from "../lib/target-url.js";
 import type { TaskResult } from "../lib/scoring.js";
 import type { StoredTestEvaluation } from "./test.js";
 
@@ -107,6 +109,8 @@ repository:
 ${DISCOVERY_GUIDANCE}
 
 ${TOOL_PLACEMENT_GUIDANCE}
+
+${WEBMCP_SPEC_GUIDANCE}
 
 After editing, report files changed, placement and wiring for each affected
 tool, and the verification result. The repair will be reviewed and applied by
@@ -293,6 +297,7 @@ async function runDurableRepair(opts: RepairOptions): Promise<void> {
   if (!opts.task) {
     throw new Error('Durable repair requires "--task <task>".');
   }
+  const url = normalizeTargetUrl(opts.url);
 
   const maxRepairs =
     opts.maxRepairs === undefined ? 3 : Number(opts.maxRepairs);
@@ -314,7 +319,7 @@ async function runDurableRepair(opts: RepairOptions): Promise<void> {
     const startedAt = new Date().toISOString();
     const workflowOptions = {
       path: path.resolve(opts.path ?? process.cwd()),
-      url: opts.url,
+      url,
       task: opts.task,
       maxRepairs,
       provider: opts.provider,

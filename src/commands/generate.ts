@@ -4,6 +4,7 @@ import { mkdir, rename, writeFile } from "node:fs/promises";
 import { runAgent } from "../lib/agent.js";
 import { resolveProvider } from "../lib/ai-provider.js";
 import {
+  WEBMCP_SPEC_GUIDANCE,
   TASK_AUTHORING_PROMPT,
   TOOL_PLACEMENT_GUIDANCE,
   TOOL_PROPOSAL_PROMPT,
@@ -25,7 +26,7 @@ export const GENERATE_ONLY_PROMPT = `
 Focused generation: read ./.webmcpify/discovery.json first and draft WebMCP
 tool registrations only for the discovered actions —
 declarative (HTML form attributes) for simple single-input actions, imperative
-(navigator.modelContext) for actions needing custom logic or state. Report the
+(document.modelContext) for actions needing custom logic or state. Report the
 relevant discovery findings briefly, then output the proposed diff and a concise
 placement/wiring summary for each tool. Use explicit file paths in the diff.
 Do not deploy or run browser verification — WebMCPify will compile-check this
@@ -46,13 +47,17 @@ reporting the proposal.
 The current working directory is the only project you may access. Do not use
 absolute paths, inspect parent directories, or access any checkout outside it.
 
-Every imperative integration must be wired into code that runs on app load or
-the relevant route, and must safely access navigator.modelContext. Every
+Every imperative integration must be wired into code that runs once on app load
+or the relevant route, and must safely access document.modelContext. Use one
+stable AbortController per registration lifecycle; abort it on cleanup rather
+than calling unregisterTool. Every
 declarative integration must add tool-name to the real rendered form. Do not
 leave a standalone unregistered module. These runtime requirements are checked
 before approval.
 
 ${TOOL_PLACEMENT_GUIDANCE}
+
+${WEBMCP_SPEC_GUIDANCE}
 
 ${TOOL_PROPOSAL_PROMPT}
 
@@ -87,8 +92,9 @@ function methodInstruction(method: GenerationMethod): string {
 tool: prefer HTML form attributes and existing form submit behavior.`;
     case "imperative":
       return `For this run, use the imperative approach for every drafted
-tool: register through navigator.modelContext with explicit schemas and
-handlers.`;
+tool: register through document.modelContext with explicit schemas, title,
+annotations, and handlers. Return plain serializable values from execute;
+never wrap results in an MCP content envelope.`;
     case "auto":
       return "";
   }
@@ -275,11 +281,11 @@ async function assertGeneratedWebMcpWiring(
   // Include the actual diff because generation may create a new integration
   // file that was not present in the pre-generation discovery file list.
   const generatedSource = `${source}\n${diff}`;
-  const hasImperativeRuntime = /navigator\s*\.\s*modelContext|registerTool\s*\(/.test(generatedSource);
+  const hasImperativeRuntime = /document\s*\.\s*modelContext|registerTool\s*\(/.test(generatedSource);
   const hasDeclarativeRuntime = /tool-name\s*=|toolname\s*=/.test(generatedSource);
   if (!hasImperativeRuntime && !hasDeclarativeRuntime) {
     throw new Error(
-      "Generated source has no WebMCP runtime wiring. Add navigator.modelContext registration or tool-name on the real form before approval.",
+      "Generated source has no current WebMCP runtime wiring. Add document.modelContext registration or tool-name on the real form before approval.",
     );
   }
 }

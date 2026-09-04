@@ -6,8 +6,10 @@ import { createTrajectoryArtifact } from "./trajectories.js";
 export interface ProposedTool {
   id: string;
   name: string;
+  title: string;
   description: string;
   parameters: { type: "object"; properties: Record<string, unknown>; required?: string[]; additionalProperties?: boolean };
+  annotations: { readOnlyHint: boolean; untrustedContentHint: boolean; consequentialHint: boolean };
   implementation: { handler: string; action: string; state?: string };
   placement: { strategy: "declarative" | "imperative"; file: string; rationale: string };
   sourceFiles: string[];
@@ -135,17 +137,22 @@ function normalizeTool(value: unknown, index: number): ProposedTool {
   const candidate = value as Record<string, unknown>;
   const name = typeof candidate.name === "string" ? candidate.name.trim() : typeof candidate.id === "string" ? candidate.id.trim() : "";
   const id = typeof candidate.id === "string" ? candidate.id.trim() : name;
+  const title = typeof candidate.title === "string" ? candidate.title.trim() : "";
   const implementation = candidate.implementation as Record<string, unknown> | undefined;
   const placement = candidate.placement as Record<string, unknown> | undefined;
   const parameters = (candidate.parameters ?? candidate.schema) as Record<string, unknown> | undefined;
   if (!/^[a-z][a-z0-9_-]*$/i.test(name) || !/^[a-z][a-z0-9_-]*$/i.test(id)) throw new Error(`Tool ${index + 1} has an invalid id/name.`);
   if (typeof candidate.description !== "string" || !candidate.description.trim()) throw new Error(`Tool "${name}" needs a description.`);
+  if (!title) throw new Error(`Tool "${name}" needs a WebMCP title.`);
   if (!parameters || parameters.type !== "object" || typeof parameters.properties !== "object" || parameters.properties === null || Array.isArray(parameters.properties)) throw new Error(`Tool "${name}" needs an object JSON-schema parameters definition.`);
+  if (parameters.additionalProperties !== false) throw new Error(`Tool "${name}" must set parameters.additionalProperties to false.`);
+  const annotations = candidate.annotations as Record<string, unknown> | undefined;
+  if (!annotations || typeof annotations.readOnlyHint !== "boolean" || typeof annotations.untrustedContentHint !== "boolean" || typeof annotations.consequentialHint !== "boolean") throw new Error(`Tool "${name}" needs complete WebMCP annotations.`);
   if (!implementation || typeof implementation.handler !== "string" || typeof implementation.action !== "string") throw new Error(`Tool "${name}" needs implementation.handler and implementation.action.`);
   if (!placement || (placement.strategy !== "declarative" && placement.strategy !== "imperative") || typeof placement.file !== "string" || typeof placement.rationale !== "string") throw new Error(`Tool "${name}" needs valid placement information.`);
   if (!Array.isArray(candidate.sourceFiles) || candidate.sourceFiles.length === 0 || candidate.sourceFiles.some((file) => typeof file !== "string" || !file.trim())) throw new Error(`Tool "${name}" needs sourceFiles.`);
   if (parameters.required !== undefined && (!Array.isArray(parameters.required) || parameters.required.some((field) => typeof field !== "string"))) throw new Error(`Tool "${name}" has an invalid required parameter list.`);
-  return { id, name, description: candidate.description.trim(), parameters: parameters as ProposedTool["parameters"], implementation: { handler: implementation.handler, action: implementation.action, ...(typeof implementation.state === "string" ? { state: implementation.state } : {}) }, placement: { strategy: placement.strategy, file: placement.file, rationale: placement.rationale }, sourceFiles: [...new Set((candidate.sourceFiles as string[]).map((file) => file.trim()))] };
+  return { id, name, title, description: candidate.description.trim(), parameters: parameters as ProposedTool["parameters"], annotations: { readOnlyHint: annotations.readOnlyHint, untrustedContentHint: annotations.untrustedContentHint, consequentialHint: annotations.consequentialHint }, implementation: { handler: implementation.handler, action: implementation.action, ...(typeof implementation.state === "string" ? { state: implementation.state } : {}) }, placement: { strategy: placement.strategy, file: placement.file, rationale: placement.rationale }, sourceFiles: [...new Set((candidate.sourceFiles as string[]).map((file) => file.trim()))] };
 }
 
 function relatedSignals(tool: ProposedTool, discovery: DiscoveryResult): string[] {
