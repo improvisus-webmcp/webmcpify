@@ -1,6 +1,6 @@
 {
   "name": "webmcpify",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "A CLI that audits and generates WebMCP tool registrations for a website, verified by an isolated agent driving a real browser, with human approval required before any tool goes live",
   "main": "dist/cli.js",
   "type": "module",
