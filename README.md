@@ -39,6 +39,8 @@ For reproducible browser testing, start headless Google Chrome in a separate ter
 
 The headless launcher enables the WebMCP and DevTools WebMCP features, remote CDP, and an isolated profile. It does not enable every experimental Chrome feature. WebMCP is experimental: in supported Chrome builds, enable chrome://flags/#enable-webmcp-testing and relaunch Chrome if WebMCP is unavailable. The generated Chrome DevTools MCP configuration enables --category-experimental-webmcp for WebMCP discovery and execution.
 
+The URL examples below use http://localhost:5173 only as a local default. Set TARGET_URL to any reachable http:// or https:// URL, such as another local port, a LAN host, staging, or a public deployment, and use that same URL for Chrome, baseline, test, repair, and final-eval. For a remote target, skip the local app server terminal.
+
 Install WebMCPify and prepare the target project:
 
 ```bash
@@ -75,6 +77,8 @@ pnpm webmcpify final-eval \
 ```
 
 `final-eval` performs discovery, generation, human review, baseline testing, approved application, WebMCP testing, repair when approved, and durable Temporal evaluation.
+
+Run the target app, headless Chrome, Temporal server, and Temporal worker in four separate terminals. The final-eval command runs from a fifth terminal in the WebMCPify checkout. Chrome only opens the app; it does not start the target app server.
 
 ### CLI commands
 
@@ -128,7 +132,7 @@ pnpm build
 Next is configured for static export, so `demo/out/` can be deployed to
 Vercel, Netlify, Cloudflare Pages, or any static host.
 
-Temporal is optional for the normal CLI/MCP workflow, but required to complete `final-eval`: that command always runs the final durable Temporal evaluation, even when no repair is needed.
+Temporal is required for `final-eval` and durable repair. The plain discovery, generation, review, apply, and browser-test commands can run without Temporal.
 
 ## MCP adapter for coding agents
 
@@ -544,8 +548,8 @@ During local development, the equivalent `pnpm webmcpify ...` commands can be us
 ---
 
 # 6. Antigravity Setup
-Discovery can run without Git. Temporal is optional for the standard workflow,
-but must be running for `final-eval` and durable repair.
+Discovery can run without Git. The complete patch workflow requires Git, and
+Temporal must be running for `final-eval` and durable repair.
 
 The primary end-to-end testing environment for this submission is Antigravity.
 
